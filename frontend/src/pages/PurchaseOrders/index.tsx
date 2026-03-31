@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import axios from 'axios';
+import api from '../../lib/api';
 import { ShoppingCart, Search, ArrowUpDown, AlertCircle, FileText, Factory, Filter, Plus, Pencil, Trash2, FileSpreadsheet, FileDown, Download } from 'lucide-react';
 import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
 import { useAuth } from '../../contexts/AuthContext';
@@ -64,9 +64,9 @@ export default function PurchaseOrderIndex() {
   const fetchAll = useCallback(async () => {
     try {
       const [posRes, vendorsRes, projectsRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/v1/purchase-orders'),
-        axios.get('http://localhost:3000/api/v1/vendors'),
-        axios.get('http://localhost:3000/api/v1/projects'),
+        api.get('/purchase-orders'),
+        api.get('/vendors'),
+        api.get('/projects'),
       ]);
       setData(posRes.data);
       setVendors(vendorsRes.data);
@@ -114,6 +114,11 @@ export default function PurchaseOrderIndex() {
     return Object.keys(errors).length === 0;
   };
 
+  const handleSort = (field: string) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('asc'); }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
@@ -122,9 +127,9 @@ export default function PurchaseOrderIndex() {
     try {
       const payload = { ...form, totalAmount: Number(form.totalAmount) };
       if (editingPO) {
-        await axios.patch(`http://localhost:3000/api/v1/purchase-orders/${editingPO.id}`, payload);
+        await api.patch(`/purchase-orders/${editingPO.id}`, payload);
       } else {
-        await axios.post('http://localhost:3000/api/v1/purchase-orders', payload);
+        await api.post('/purchase-orders', payload);
       }
       setSlideOpen(false);
       await fetchAll();
@@ -139,7 +144,7 @@ export default function PurchaseOrderIndex() {
     if (!deleteTarget) return;
     setIsDeleting(true);
     try {
-      await axios.delete(`http://localhost:3000/api/v1/purchase-orders/${deleteTarget.id}`);
+      await api.delete(`/purchase-orders/${deleteTarget.id}`);
       setDeleteTarget(null);
       await fetchAll();
     } catch (err: any) {
@@ -148,11 +153,6 @@ export default function PurchaseOrderIndex() {
     } finally {
       setIsDeleting(false);
     }
-  };
-
-  const handleSort = (field: string) => {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('asc'); }
   };
 
   const uniqueProjects = Array.from(new Set(data.map(d => d.project?.name).filter(Boolean)));

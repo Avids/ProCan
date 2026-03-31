@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import axios from 'axios';
+import api from '../../lib/api';
 import { Users, Search, ArrowUpDown, AlertCircle, Phone, Mail, Building2, Filter, Plus, Pencil, Trash2, FileSpreadsheet, FileDown } from 'lucide-react';
 import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
 import { useAuth } from '../../contexts/AuthContext';
@@ -57,7 +57,7 @@ export default function VendorsIndex() {
 
   const fetchVendors = useCallback(async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/v1/vendors');
+      const res = await api.get('/vendors');
       setData(res.data);
     } catch {
       setError('Failed to fetch the Vendor Directory.');
@@ -110,9 +110,9 @@ export default function VendorsIndex() {
     setSaveError('');
     try {
       if (editingVendor) {
-        await axios.patch(`http://localhost:3000/api/v1/vendors/${editingVendor.id}`, form);
+        await api.patch(`/vendors/${editingVendor.id}`, form);
       } else {
-        await axios.post('http://localhost:3000/api/v1/vendors', form);
+        await api.post('/vendors', form);
       }
       setSlideOpen(false);
       await fetchVendors();
@@ -127,7 +127,7 @@ export default function VendorsIndex() {
     if (!deleteTarget) return;
     setIsDeleting(true);
     try {
-      await axios.delete(`http://localhost:3000/api/v1/vendors/${deleteTarget.id}`);
+      await api.delete(`/vendors/${deleteTarget.id}`);
       setDeleteTarget(null);
       await fetchVendors();
     } catch (err: any) {

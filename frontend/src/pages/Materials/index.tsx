@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import axios from 'axios';
+import api from '../../lib/api';
 import {
   PackageOpen, Search, ArrowUpDown, AlertCircle, CalendarClock, Box, Plus, Pencil, Trash2, FileSpreadsheet, FileDown
 } from 'lucide-react';
@@ -87,10 +87,10 @@ export default function MaterialsIndex() {
   const fetchAll = useCallback(async () => {
     try {
       const [matRes, poRes, projRes, vendRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/v1/materials'),
-        axios.get('http://localhost:3000/api/v1/purchase-orders'),
-        axios.get('http://localhost:3000/api/v1/projects'),
-        axios.get('http://localhost:3000/api/v1/vendors'),
+        api.get('/materials'),
+        api.get('/purchase-orders'),
+        api.get('/projects'),
+        api.get('/vendors'),
       ]);
       setData(matRes.data);
       setPOs(poRes.data.map((p: any) => ({
@@ -151,8 +151,8 @@ export default function MaterialsIndex() {
     setIsSaving(true); setSaveError('');
     try {
       const payload = { ...form, quantity: Number(form.quantity), unitPrice: form.unitPrice ? Number(form.unitPrice) : undefined, leadTimeWeeks: form.leadTimeWeeks ? Number(form.leadTimeWeeks) : undefined };
-      if (editingMat) await axios.patch(`http://localhost:3000/api/v1/materials/${editingMat.id}`, payload);
-      else await axios.post('http://localhost:3000/api/v1/materials', payload);
+      if (editingMat) await api.patch(`/materials/${editingMat.id}`, payload);
+      else await api.post('/materials', payload);
       setSlideOpen(false); await fetchAll();
     } catch (err: any) { setSaveError(err.response?.data?.message || 'Failed to save material.'); }
     finally { setIsSaving(false); }
@@ -160,7 +160,7 @@ export default function MaterialsIndex() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return; setIsDeleting(true);
-    try { await axios.delete(`http://localhost:3000/api/v1/materials/${deleteTarget.id}`); setDeleteTarget(null); await fetchAll(); }
+    try { await api.delete(`/materials/${deleteTarget.id}`); setDeleteTarget(null); await fetchAll(); }
     catch (err: any) { setDeleteTarget(null); setError(err.response?.data?.message || 'Failed to delete.'); }
     finally { setIsDeleting(false); }
   };

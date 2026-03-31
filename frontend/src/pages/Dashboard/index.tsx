@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../lib/api';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, 
   PieChart, Pie, Legend
@@ -36,7 +36,7 @@ export default function DashboardIndex() {
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
-        const res = await axios.get('http://localhost:3000/api/v1/dashboard/summary');
+        const res = await api.get('/dashboard/summary');
         setData(res.data);
       } catch (err) {
         console.error(err);

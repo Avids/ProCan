@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { HardHat, Lock, Mail, Loader2 } from 'lucide-react';
 
@@ -19,7 +19,7 @@ export default function Login() {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:3000/api/v1/auth/login', {
+      const response = await api.post('/auth/login', {
         email,
         password
       });

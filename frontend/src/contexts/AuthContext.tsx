@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 
 interface User {
   id: string;
@@ -30,16 +30,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (token) {
         try {
           // Verify token against backend /me
-          const response = await axios.get('http://localhost:3000/api/v1/auth/me', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          const response = await api.get('/auth/me');
           setUser(response.data);
-          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         } catch (error) {
           console.error("Token verification failed", error);
-          setToken(null);
-          localStorage.removeItem('token');
-          delete axios.defaults.headers.common['Authorization'];
+          logout();
         }
       }
       setIsLoading(false);
@@ -51,14 +46,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(newToken);
     setUser(userData);
     localStorage.setItem('token', newToken);
-    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
   };
 
   const logout = () => {
     setToken(null);
     setUser(null);
     localStorage.removeItem('token');
-    delete axios.defaults.headers.common['Authorization'];
   };
 
   return (

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../../lib/api';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, UserCircle, MapPin, Building, CalendarDays, ShoppingBag, HardHat, FileText, AlertCircle } from 'lucide-react';
 
@@ -36,7 +36,7 @@ export default function ProjectDetail() {
   useEffect(() => {
     const fetchProject = async () => {
       try {
-        const res = await axios.get(`http://localhost:3000/api/v1/projects/${id}`);
+        const res = await api.get(`/projects/${id}`);
         setProject(res.data);
       } catch (err) {
         setError('Project Details could not be fetched.');

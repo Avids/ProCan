@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import axios from 'axios';
+import api, { getAssetUrl } from '../../lib/api';
 import { FileText, Search, ArrowUpDown, AlertCircle, Filter, CalendarClock, History, Plus, Pencil, Trash2, GitBranch, FileSpreadsheet, FileDown, Download, Paperclip } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import SlideOver from '../../components/ui/SlideOver';
@@ -64,8 +64,8 @@ export default function SubmittalsIndex() {
   const fetchAll = useCallback(async () => {
     try {
       const [subRes, projRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/v1/submittals'),
-        axios.get('http://localhost:3000/api/v1/projects')
+        api.get('/submittals'),
+        api.get('/projects')
       ]);
       setData(subRes.data);
       setProjects(projRes.data);
@@ -126,13 +126,9 @@ export default function SubmittalsIndex() {
     const formData = new FormData();
     formData.append('file', selectedFile);
 
-    const token = localStorage.getItem('token');
     try {
-      const res = await axios.post('http://localhost:3000/api/v1/upload', formData, {
-        headers: { 
-          'Content-Type': 'multipart/form-data',
-          'Authorization': `Bearer ${token}`
-        }
+      const res = await api.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
       return res.data.url;
     } catch (err: any) {
@@ -163,8 +159,8 @@ export default function SubmittalsIndex() {
         reviewDurationDays: form.reviewDurationDays ? Number(form.reviewDurationDays) : undefined,
         attachment1Url
       };
-      if (editingSub) await axios.patch(`http://localhost:3000/api/v1/submittals/${editingSub.id}`, payload);
-      else await axios.post('http://localhost:3000/api/v1/submittals', payload);
+      if (editingSub) await api.patch(`/submittals/${editingSub.id}`, payload);
+      else await api.post('/submittals', payload);
       setSlideOpen(false); setSelectedFile(null); await fetchAll();
     } catch (err: any) { setSaveError(err.response?.data?.message || 'Failed to save Submittal.'); }
     finally { setIsSaving(false); }
@@ -174,7 +170,7 @@ export default function SubmittalsIndex() {
     if (!deleteTarget) return;
     setIsDeleting(true);
     try {
-      await axios.delete(`http://localhost:3000/api/v1/submittals/${deleteTarget.id}`);
+      await api.delete(`/submittals/${deleteTarget.id}`);
       setDeleteTarget(null); await fetchAll();
     } catch (err: any) { setDeleteTarget(null); setError(err.response?.data?.message || 'Failed to delete.'); }
     finally { setIsDeleting(false); }
@@ -184,7 +180,7 @@ export default function SubmittalsIndex() {
   const handleRevise = async (sub: Submittal) => {
     setRevisingId(sub.id);
     try {
-      await axios.post(`http://localhost:3000/api/v1/submittals/${sub.id}/revise`);
+      await api.post(`/submittals/${sub.id}/revise`);
       await fetchAll();
     } catch (err: any) {
       setError(err.response?.data?.message || `Failed to create new revision for ${sub.submittalNumber}.`);
@@ -409,7 +405,7 @@ export default function SubmittalsIndex() {
 
                           {/* Attachment Link (Paperclip) */}
                           {sub.attachment1Url && (
-                            <a href={`http://localhost:3000${sub.attachment1Url}`} target="_blank" rel="noreferrer" className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="View Attachment">
+                            <a href={getAssetUrl(sub.attachment1Url)} target="_blank" rel="noreferrer" className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="View Attachment">
                               <Paperclip className="w-4 h-4" />
                             </a>
                           )}
@@ -505,7 +501,7 @@ export default function SubmittalsIndex() {
             </div>
             {editingSub?.attachment1Url && !selectedFile && (
               <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                <Download className="w-3 h-3" /> Current: <a href={`http://localhost:3000${editingSub.attachment1Url}`} target="_blank" rel="noreferrer" className="underline font-medium">View File</a>
+                <Download className="w-3 h-3" /> Current: <a href={getAssetUrl(editingSub.attachment1Url)} target="_blank" rel="noreferrer" className="underline font-medium">View File</a>
               </p>
             )}
             {selectedFile && <p className="text-xs text-emerald-600 font-medium italic">New file selected: {selectedFile.name}</p>}

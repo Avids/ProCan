@@ -32,7 +32,13 @@ app.get('/api/v1/health', async (req: Request, res: Response) => {
 // Centralized Error Handling
 app.use(errorHandler);
 
-app.listen(port, () => {
-  console.log(`Server is running at http://localhost:${port}`);
-});
+// Only listen when running locally
+if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
+  app.listen(port, () => {
+    console.log(`Server is running at http://localhost:${port}`);
+  });
+}
+
+// Export app for Vercel Serverless Functions
+export default app;
 

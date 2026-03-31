@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import axios from 'axios';
+import api from '../../lib/api';
 import { Users, Search, AlertCircle, Plus, Pencil, UserX, UserCheck, Shield, Briefcase } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import SlideOver from '../../components/ui/SlideOver';
@@ -54,14 +54,14 @@ export default function EmployeesPage() {
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [formErrors, setFormErrors] = useState<Partial<typeof emptyForm>>({});
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSaving, setIsLoadingSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [deactivateTarget, setDeactivateTarget] = useState<Employee | null>(null);
   const [isDeactivating, setIsDeactivating] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/v1/employees');
+      const res = await api.get('/employees');
       setData(res.data);
     } catch { setError('Failed to load employees.'); }
     finally { setIsLoading(false); }
@@ -93,21 +93,21 @@ export default function EmployeesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-    setIsSaving(true); setSaveError('');
+    setIsLoadingSaving(true); setSaveError('');
     try {
       const payload: any = { ...form, isActive: form.isActive === 'true' };
       if (editingEmp && !payload.password) delete payload.password;
-      if (editingEmp) await axios.patch(`http://localhost:3000/api/v1/employees/${editingEmp.id}`, payload);
-      else await axios.post('http://localhost:3000/api/v1/employees', payload);
+      if (editingEmp) await api.patch(`/employees/${editingEmp.id}`, payload);
+      else await api.post('/employees', payload);
       setSlideOpen(false); await fetchAll();
     } catch (err: any) { setSaveError(err.response?.data?.message || 'Failed to save employee.'); }
-    finally { setIsSaving(false); }
+    finally { setIsLoadingSaving(false); }
   };
 
   const handleDeactivate = async () => {
     if (!deactivateTarget) return; setIsDeactivating(true);
     try {
-      await axios.delete(`http://localhost:3000/api/v1/employees/${deactivateTarget.id}`);
+      await api.delete(`/employees/${deactivateTarget.id}`);
       setDeactivateTarget(null); await fetchAll();
     } catch (err: any) { setDeactivateTarget(null); setError(err.response?.data?.message || 'Failed to deactivate.'); }
     finally { setIsDeactivating(false); }

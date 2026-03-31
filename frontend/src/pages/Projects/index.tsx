@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import axios from 'axios';
+import api from '../../lib/api';
 import { useNavigate } from 'react-router-dom';
 import { FolderKanban, Search, Plus, Calendar, DollarSign, Activity, Pencil, Trash2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -51,7 +51,7 @@ export default function ProjectsIndex() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await axios.get('http://localhost:3000/api/v1/projects');
+      const res = await api.get('/projects');
       setProjects(res.data);
     } catch { setError('Failed to fetch projects.'); }
     finally { setIsLoading(false); }
@@ -95,8 +95,8 @@ export default function ProjectsIndex() {
     setIsSaving(true); setSaveError('');
     try {
       const payload = { ...form, totalValue: Number(form.totalValue), durationMonths: Number(form.durationMonths) };
-      if (editingProject) await axios.patch(`http://localhost:3000/api/v1/projects/${editingProject.id}`, payload);
-      else await axios.post('http://localhost:3000/api/v1/projects', payload);
+      if (editingProject) await api.patch(`/projects/${editingProject.id}`, payload);
+      else await api.post('/projects', payload);
       setSlideOpen(false); await fetchProjects();
     } catch (err: any) { setSaveError(err.response?.data?.message || 'Failed to save project.'); }
     finally { setIsSaving(false); }
@@ -105,7 +105,7 @@ export default function ProjectsIndex() {
   const handleDelete = async () => {
     if (!deleteTarget) return; setIsDeleting(true);
     try {
-      await axios.delete(`http://localhost:3000/api/v1/projects/${deleteTarget.id}`);
+      await api.delete(`/projects/${deleteTarget.id}`);
       setDeleteTarget(null); await fetchProjects();
     } catch (err: any) { setDeleteTarget(null); setError(err.response?.data?.message || 'Failed to delete project.'); }
     finally { setIsDeleting(false); }
