@@ -1,0 +1,5 @@
+Employee Count: 2
+Admin found: true
+Admin ID: d59c7d38-1172-450a-acf3-579ac7ba5961
+Admin isActive: true
+Admin Role: COMPANY_MANAGER
