@@ -11,7 +11,7 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
@@ -21,11 +21,31 @@ app.use('/api/v1', routes);
 
 // Generic Health Check
 app.get('/api/v1/health', async (req: Request, res: Response) => {
+  const dbUrl = process.env.DATABASE_URL;
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.status(200).json({ status: 'OK', database: 'connected' });
-  } catch (error) {
-    res.status(500).json({ status: 'ERROR', database: 'disconnected', error });
+    res.status(200).json({
+      status: 'OK',
+      database: 'connected',
+      env: {
+        DATABASE_URL: dbUrl ? `${dbUrl.split('@')[1] || '(set)'}` : 'NOT SET',
+        NODE_ENV: process.env.NODE_ENV,
+        VERCEL: process.env.VERCEL,
+      }
+    });
+  } catch (error: any) {
+    console.error('[Health Check] DB Error:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      database: 'disconnected',
+      error: error.message,
+      errorCode: error.code,
+      env: {
+        DATABASE_URL: dbUrl ? '(set but connection failed)' : 'NOT SET',
+        NODE_ENV: process.env.NODE_ENV,
+        VERCEL: process.env.VERCEL,
+      }
+    });
   }
 });
 
