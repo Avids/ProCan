@@ -6,9 +6,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "build:frontend": "cd frontend && npm install && npm run build",
-    "build:backend": "cd backend && npm install && ./node_modules/.bin/prisma generate",
-    "build": "npm run build:frontend && npm run build:backend"
+    "vercel-build": "cd backend && npm install && npx prisma@5.22.0 generate && cd ../frontend && npm install && npm run build",
+    "build": "npm run vercel-build"
   },
   "dependencies": {
     "prisma": "5.22.0",
