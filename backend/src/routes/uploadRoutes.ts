@@ -14,16 +14,25 @@ router.post('/', upload.single('file'), (req: any, res) => {
     user: req.user?.email,
     file: req.file ? {
       originalname: req.file.originalname,
-      filename: req.file.filename,
-      size: req.file.size
+      size: req.file.size,
+      hasBuffer: !!req.file.buffer,
+      hasPath: !!req.file.path,
     } : 'NO FILE'
   });
 
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }
-  // Construct a public URL
-  // In a real app, this might be a static URL or S3 URL
+
+  // On Vercel: memory storage → convert to base64 data URL
+  if (req.file.buffer) {
+    const base64 = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype || 'application/octet-stream';
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+    return res.json({ url: dataUrl, filename: req.file.originalname });
+  }
+
+  // Locally: disk storage → return static file path
   const fileUrl = `/uploads/${req.file.filename}`;
   res.json({ url: fileUrl, filename: req.file.originalname });
 });
