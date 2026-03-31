@@ -1,0 +1,432 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS - Define all status types
+// ============================================
+
+enum VendorTradeType {
+  STRUCTURAL
+  ARCHITECTURAL
+  MEP
+  CIVIL
+  FINISHES
+  OTHER
+
+  @@map("vendor_trade_type")
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+
+  @@map("project_status")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_RECEIVED
+  COMPLETED
+  CANCELLED
+
+  @@map("purchase_order_status")
+}
+
+enum MaterialStatus {
+  ORDERED
+  RELEASED
+  SHIPPED
+  DELIVERED
+  INSTALLED
+  REJECTED
+
+  @@map("material_status")
+}
+
+enum ShopDrawingStatus {
+  NOT_REQUIRED
+  NOT_SUBMITTED
+  SUBMITTED
+  APPROVED
+  REJECTED
+  REVISION_REQUIRED
+
+  @@map("shop_drawing_status")
+}
+
+enum SystemCategory {
+  MECHANICAL
+  ELECTRICAL
+  PLUMBING
+  STRUCTURAL
+  ARCHITECTURAL
+  CIVIL
+  FIRE_PROTECTION
+  OTHER
+
+  @@map("system_category")
+}
+
+enum SubmittalStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  REVISE_AND_RESUBMIT
+
+  @@map("submittal_status")
+}
+
+enum RFIStatus {
+  DRAFT
+  SUBMITTED
+  ANSWERED
+  CLOSED
+
+  @@map("rfi_status")
+}
+
+enum EmployeePosition {
+  PROJECT_MANAGER
+  PROJECT_ENGINEER
+  SITE_SUPERVISOR
+  COORDINATOR
+  QA_QC_ENGINEER
+  SAFETY_OFFICER
+  STOREKEEPER
+  ADMIN
+
+  @@map("employee_position")
+}
+
+enum EmployeeRole {
+  COMPANY_MANAGER
+  PROJECT_MANAGER
+  PROJECT_ENGINEER
+  SITE_SUPERVISOR
+  COORDINATOR
+  ADMIN
+
+  @@map("employee_role")
+}
+
+enum ModuleAccess {
+  MATERIALS
+  SUBMITTALS
+  RFIS
+  ALL
+
+  @@map("module_access")
+}
+
+// ============================================
+// TABLE 1: Vendors / Suppliers
+// ============================================
+
+model Vendor {
+  id               String          @id @default(uuid())
+  companyName      String
+  contactPerson    String
+  phone            String
+  email            String
+  address          String?
+  taxId            String?
+  notes            String?
+  isSubcontractor  Boolean         @default(false)
+  tradeType        VendorTradeType @default(OTHER)
+  metadata         Json?           // For future expandability
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  // Relationships
+  purchaseOrders   PurchaseOrder[]
+  materials        Material[]
+
+  @@map("vendors")
+}
+
+// ============================================
+// TABLE 2: Projects
+// ============================================
+
+model Project {
+  id               String        @id @default(uuid())
+  projectNumber    String        @unique
+  name             String
+  location         String?
+  description      String?
+  totalValue       Float
+  laborHours       Float?
+  laborValue       Float?
+  materialCost     Float?
+  miscCost         Float?
+  durationMonths   Int
+  startDate        DateTime?
+  finishDate       DateTime?
+  actualStartDate  DateTime?
+  actualFinishDate DateTime?
+  status           ProjectStatus @default(PLANNING)
+  metadata         Json?         // For future expandability
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // Relationships
+  purchaseOrders    PurchaseOrder[]
+  materials         Material[]
+  submittals        Submittal[]
+  rfis              RFI[]
+  projectAssignments ProjectAssignment[]
+
+  @@index([projectNumber])
+  @@index([status])
+  @@index([startDate])
+  @@map("projects")
+}
+
+// ============================================
+// TABLE 3: Purchase Orders
+// ============================================
+
+model PurchaseOrder {
+  id               String              @id @default(uuid())
+  poNumber         String              @unique
+  vendorId         String
+  projectId        String
+  poDate           DateTime            @default(now())
+  totalAmount      Float
+  status           PurchaseOrderStatus @default(DRAFT)
+  notes            String?
+  metadata         Json?               // For future expandability
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  // Relationships
+  vendor           Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  project          Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  materials        Material[]
+
+  @@index([poNumber])
+  @@index([vendorId])
+  @@index([projectId])
+  @@index([status])
+  @@map("purchase_orders")
+}
+
+// ============================================
+// TABLE 4: Materials
+// ============================================
+
+model Material {
+  id                     String            @id @default(uuid())
+  poId                   String?
+  projectId              String
+  vendorId               String?
+  description            String
+  quantity               Float
+  unit                   String
+  unitPrice              Float?
+  totalPrice             Float?
+  status                 MaterialStatus    @default(ORDERED)
+  releasedDate           DateTime?
+  leadTimeWeeks          Int?
+  expectedDeliveryDate   DateTime?
+  actualDeliveryDate     DateTime?
+  shopDrawingStatus      ShopDrawingStatus @default(NOT_SUBMITTED)
+  shopDrawingFileUrl     String?
+  proofOfDeliveryFileUrl String?
+  testReportFileUrl      String?
+  manualFileUrl          String?
+  location               String?           // Location on site
+  drawingReference       String?           // Related drawing number
+  systemCategory         SystemCategory    @default(OTHER)
+  notes                  String?
+  metadata               Json?             // For future expandability
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  // Relationships
+  purchaseOrder          PurchaseOrder?    @relation(fields: [poId], references: [id], onDelete: Restrict)
+  project                Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vendor                 Vendor?           @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+
+  @@index([poId])
+  @@index([projectId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([systemCategory])
+  @@index([expectedDeliveryDate])
+  @@map("materials")
+}
+
+// ============================================
+// TABLE 5: Submittals
+// ============================================
+
+model Submittal {
+  id                 String          @id @default(uuid())
+  projectId          String
+  submittalNumber    String
+  revisionNumber     Int             @default(0)
+  title              String
+  description        String?
+  status             SubmittalStatus @default(DRAFT)
+  submittedDate      DateTime?
+  reviewDurationDays Int?
+  dueDate            DateTime?
+  approvedDate       DateTime?
+  attachment1Url     String?
+  attachment2Url     String?
+  notes              String?
+  createdById        String
+  parentSubmittalId  String?         // For revision tracking (self-reference)
+  metadata           Json?           // For future expandability
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  // Relationships
+  project            Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy          Employee        @relation("CreatedSubmittals", fields: [createdById], references: [id])
+  parentSubmittal    Submittal?      @relation("SubmittalRevisions", fields: [parentSubmittalId], references: [id])
+  revisions          Submittal[]     @relation("SubmittalRevisions")
+
+  @@unique([projectId, submittalNumber, revisionNumber])
+  @@index([projectId])
+  @@index([status])
+  @@index([submittalNumber])
+  @@map("submittals")
+}
+
+// ============================================
+// TABLE 6: RFIs (Requests for Information)
+// ============================================
+
+model RFI {
+  id               String      @id @default(uuid())
+  projectId        String
+  rfiNumber        String
+  revisionNumber   Int         @default(0)
+  title            String      @default("Untitled RFI")
+  dateRaised       DateTime    @default(now())
+  question         String
+  response         String?
+  responseDate     DateTime?
+  status           RFIStatus   @default(DRAFT)
+  attachment1Url   String?
+  attachment2Url   String?
+  raisedById       String
+  respondedById    String?
+  parentRfiId      String?
+  metadata         Json?       // For future expandability
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  // Relationships
+  project          Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  raisedBy         Employee    @relation("RaisedRFIs", fields: [raisedById], references: [id])
+  respondedBy      Employee?   @relation("RespondedRFIs", fields: [respondedById], references: [id])
+  parentRfi        RFI?        @relation("RFIRevisions", fields: [parentRfiId], references: [id])
+  revisions        RFI[]       @relation("RFIRevisions")
+
+  @@unique([projectId, rfiNumber, revisionNumber])
+  @@index([projectId])
+  @@index([status])
+  @@index([rfiNumber])
+  @@map("rfis")
+}
+
+// ============================================
+// TABLE 7: Employees / Users
+// ============================================
+
+model Employee {
+  id                 String           @id @default(uuid())
+  email              String           @unique
+  password           String           // Hashed with bcrypt
+  firstName          String
+  lastName           String
+  phone              String?
+  position           EmployeePosition
+  role               EmployeeRole
+  isActive           Boolean          @default(true)
+  metadata           Json?            // For future expandability
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  // Relationships
+  projectAssignments ProjectAssignment[] @relation("EmployeeAssignments")
+  createdSubmittals  Submittal[]      @relation("CreatedSubmittals")
+  raisedRFIs         RFI[]            @relation("RaisedRFIs")
+  respondedRFIs      RFI[]            @relation("RespondedRFIs")
+  assignedProjects   ProjectAssignment[] @relation("AssignedProjects") // Projects they assigned
+  activityLogs       ActivityLog[]
+
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@map("employees")
+}
+
+// ============================================
+// TABLE 8: Project Assignments (Employee to Project)
+// ============================================
+
+model ProjectAssignment {
+  id                 String        @id @default(uuid())
+  employeeId         String
+  projectId          String
+  positionInProject  String?
+  moduleAccess       ModuleAccess  @default(ALL)
+  assignedAt         DateTime      @default(now())
+  assignedById       String
+  metadata           Json?         // For future expandability
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  // Relationships
+  employee           Employee      @relation("EmployeeAssignments", fields: [employeeId], references: [id], onDelete: Cascade)
+  project            Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedBy         Employee      @relation("AssignedProjects", fields: [assignedById], references: [id])
+
+  @@unique([employeeId, projectId])
+  @@index([employeeId])
+  @@index([projectId])
+  @@map("project_assignments")
+}
+
+// ============================================
+// TABLE 9: Activity Logs (Audit Trail)
+// ============================================
+
+model ActivityLog {
+  id           String   @id @default(uuid())
+  userId       String
+  action       String   // CREATE, UPDATE, DELETE, STATUS_CHANGE
+  entityType   String   // material, submittal, rfi, project, etc.
+  entityId     String
+  oldValues    Json?    // JSON of previous values
+  newValues    Json?    // JSON of new values
+  ipAddress    String?
+  metadata     Json?    // For future expandability
+  createdAt    DateTime @default(now())
+
+  // Relationships
+  user         Employee @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}

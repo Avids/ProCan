@@ -1,0 +1,283 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import { FolderKanban, Search, Plus, Calendar, DollarSign, Activity, Pencil, Trash2, AlertCircle } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import SlideOver from '../../components/ui/SlideOver';
+import FormField from '../../components/ui/FormField';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+
+const PROJECT_STATUSES = ['PLANNING', 'ACTIVE', 'ON_HOLD', 'COMPLETED', 'ARCHIVED'];
+
+interface ProjectListItem {
+  id: string; projectNumber: string; name: string; location: string | null;
+  description: string | null; totalValue: number | null; durationMonths: number | null;
+  status: string; startDate: string | null; finishDate: string | null;
+  _count?: { projectAssignments: number; materials: number; };
+}
+
+const statusColor = (s: string) => ({
+  ACTIVE: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800',
+  PLANNING: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400 border-amber-200 dark:border-amber-800',
+  COMPLETED: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-400 border-blue-200 dark:border-blue-800',
+  ON_HOLD: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400 border-red-200 dark:border-red-800',
+  ARCHIVED: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700',
+} as Record<string, string>)[s] || 'bg-slate-100 text-slate-700 border-slate-200';
+
+const emptyForm = {
+  projectNumber: '', name: '', location: '', description: '',
+  totalValue: '', durationMonths: '', startDate: '', finishDate: '', status: 'PLANNING'
+};
+
+export default function ProjectsIndex() {
+  const { user } = useAuth();
+  const canMutate = ['COMPANY_MANAGER', 'PROJECT_MANAGER'].includes(user?.role || '');
+  const canDelete = user?.role === 'COMPANY_MANAGER';
+  const navigate = useNavigate();
+
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+
+  const [slideOpen, setSlideOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<ProjectListItem | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [formErrors, setFormErrors] = useState<Partial<typeof emptyForm>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<ProjectListItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await axios.get('http://localhost:3000/api/v1/projects');
+      setProjects(res.data);
+    } catch { setError('Failed to fetch projects.'); }
+    finally { setIsLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchProjects(); }, [fetchProjects]);
+
+  const openCreate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingProject(null); setForm(emptyForm); setFormErrors({}); setSaveError(''); setSlideOpen(true);
+  };
+
+  const openEdit = (e: React.MouseEvent, project: ProjectListItem) => {
+    e.stopPropagation();
+    setEditingProject(project);
+    setForm({
+      projectNumber: project.projectNumber, name: project.name,
+      location: project.location || '', description: project.description || '',
+      totalValue: project.totalValue != null ? String(project.totalValue) : '',
+      durationMonths: project.durationMonths != null ? String(project.durationMonths) : '',
+      startDate: project.startDate?.split('T')[0] || '',
+      finishDate: project.finishDate?.split('T')[0] || '',
+      status: project.status
+    });
+    setFormErrors({}); setSaveError(''); setSlideOpen(true);
+  };
+
+  const validate = () => {
+    const errors: Partial<typeof emptyForm> = {};
+    if (!form.projectNumber.trim()) errors.projectNumber = 'Project number is required';
+    if (!form.name.trim()) errors.name = 'Project name is required';
+    if (!form.totalValue || isNaN(Number(form.totalValue))) errors.totalValue = 'Valid contract value is required';
+    if (!form.durationMonths || isNaN(Number(form.durationMonths))) errors.durationMonths = 'Duration in months is required';
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setIsSaving(true); setSaveError('');
+    try {
+      const payload = { ...form, totalValue: Number(form.totalValue), durationMonths: Number(form.durationMonths) };
+      if (editingProject) await axios.patch(`http://localhost:3000/api/v1/projects/${editingProject.id}`, payload);
+      else await axios.post('http://localhost:3000/api/v1/projects', payload);
+      setSlideOpen(false); await fetchProjects();
+    } catch (err: any) { setSaveError(err.response?.data?.message || 'Failed to save project.'); }
+    finally { setIsSaving(false); }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return; setIsDeleting(true);
+    try {
+      await axios.delete(`http://localhost:3000/api/v1/projects/${deleteTarget.id}`);
+      setDeleteTarget(null); await fetchProjects();
+    } catch (err: any) { setDeleteTarget(null); setError(err.response?.data?.message || 'Failed to delete project.'); }
+    finally { setIsDeleting(false); }
+  };
+
+  const filtered = projects.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.projectNumber.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
+            <FolderKanban className="w-8 h-8 text-blue-600" /> Projects Management
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">Active directory of all construction site modules.</p>
+        </div>
+        {canMutate && (
+          <button onClick={openCreate} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+            <Plus className="w-4 h-4" /> New Project
+          </button>
+        )}
+      </div>
+
+      {/* Search */}
+      <div className="bg-white dark:bg-slate-950 p-4 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input type="text" placeholder="Search by Project Name or Number..."
+            className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
+            value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-xl flex items-center gap-3 border border-red-200 dark:border-red-800">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" /> {error}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
+            <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-medium border-b border-slate-200 dark:border-slate-800 uppercase text-xs tracking-wider">
+              <tr>
+                <th className="px-6 py-4">Project ID</th>
+                <th className="px-6 py-4">Project Name</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4">Value ($)</th>
+                <th className="px-6 py-4 hidden md:table-cell">Start Date</th>
+                <th className="px-6 py-4 text-right">Team</th>
+                {(canMutate || canDelete) && <th className="px-6 py-4 text-right">Actions</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              {isLoading ? (
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <Activity className="w-8 h-8 animate-pulse text-blue-500 mx-auto mb-2" />
+                  Loading project records...
+                </td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <FolderKanban className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
+                  <p className="text-lg font-medium text-slate-700 dark:text-slate-300">No projects found</p>
+                  {canMutate && <button onClick={openCreate} className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"><Plus className="w-4 h-4" /> Create First Project</button>}
+                </td></tr>
+              ) : filtered.map(project => (
+                <tr key={project.id} onClick={() => navigate(`/projects/${project.id}`)}
+                  className="hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors group">
+                  <td className="px-6 py-4 whitespace-nowrap font-medium text-slate-900 dark:text-white">{project.projectNumber}</td>
+                  <td className="px-6 py-4 font-medium">{project.name}
+                    {project.location && <div className="text-xs text-slate-400 font-normal mt-0.5">{project.location}</div>}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-md border ${statusColor(project.status)}`}>{project.status.replace('_', ' ')}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-slate-700 dark:text-slate-300">
+                    <div className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5 text-slate-400" />{project.totalValue ? Number(project.totalValue).toLocaleString() : 'TBD'}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-slate-500 hidden md:table-cell">
+                    <div className="flex items-center gap-2"><Calendar className="w-4 h-4" />{project.startDate ? new Date(project.startDate).toLocaleDateString() : 'N/A'}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <div className="flex justify-end gap-1">
+                      {Array.from({ length: Math.min(project._count?.projectAssignments || 0, 3) }).map((_, i) => (
+                        <div key={i} className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 border-2 border-white dark:border-slate-950 shadow-sm -ml-2 first:ml-0" />
+                      ))}
+                      {(project._count?.projectAssignments || 0) > 3 && (
+                        <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 border-2 border-white dark:border-slate-950 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300 -ml-2">+{(project._count?.projectAssignments || 0) - 3}</div>
+                      )}
+                      {!project._count?.projectAssignments && <span className="text-xs text-slate-400">Unassigned</span>}
+                    </div>
+                  </td>
+                  {(canMutate || canDelete) && (
+                    <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {canMutate && (
+                          <button onClick={e => openEdit(e, project)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Edit">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button onClick={e => { e.stopPropagation(); setDeleteTarget(project); }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors" title="Delete">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* SlideOver */}
+      <SlideOver isOpen={slideOpen} onClose={() => setSlideOpen(false)} width="lg"
+        title={editingProject ? 'Edit Project' : 'New Project'}
+        subtitle={editingProject ? editingProject.projectNumber : 'Create a new construction project'}>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <FormField as="input" label="Project Number" required placeholder="e.g. PRJ-2024-001"
+              value={form.projectNumber} onChange={e => setForm(f => ({ ...f, projectNumber: e.target.value }))}
+              error={formErrors.projectNumber} disabled={!!editingProject} />
+            <FormField as="select" label="Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+              {PROJECT_STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+            </FormField>
+          </div>
+          <FormField as="input" label="Project Name" required placeholder="e.g. Alpha Tower Residential"
+            value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} error={formErrors.name} />
+          <FormField as="input" label="Location" placeholder="City, Country"
+            value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
+          <FormField as="textarea" label="Description"
+            value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief project overview..." />
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField as="input" type="number" label="Contract Value ($)" required placeholder="0"
+              value={form.totalValue} onChange={e => setForm(f => ({ ...f, totalValue: e.target.value }))} error={formErrors.totalValue} />
+            <FormField as="input" type="number" label="Duration (months)" required placeholder="e.g. 12"
+              value={form.durationMonths} onChange={e => setForm(f => ({ ...f, durationMonths: e.target.value }))} error={formErrors.durationMonths} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField as="input" type="date" label="Planned Start Date" value={form.startDate}
+              onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
+            <FormField as="input" type="date" label="Planned Finish Date" value={form.finishDate}
+              onChange={e => setForm(f => ({ ...f, finishDate: e.target.value }))} />
+          </div>
+
+          {saveError && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 text-sm rounded-lg border border-red-200 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" /> {saveError}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+            <button type="button" onClick={() => setSlideOpen(false)} className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancel</button>
+            <button type="submit" disabled={isSaving} className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2">
+              {isSaving && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {editingProject ? 'Save Changes' : 'Create Project'}
+            </button>
+          </div>
+        </form>
+      </SlideOver>
+
+      <ConfirmDialog isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} isLoading={isDeleting}
+        title="Delete Project"
+        message={`Delete project "${deleteTarget?.name}"? This is permanent and irreversible. Projects with active materials cannot be deleted.`} />
+    </div>
+  );
+}

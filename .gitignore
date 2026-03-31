@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+package-lock.json
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs.txt
+backend_logs.txt
+build.log
+build2.log
+out.txt
+prisma_error.txt
+temp-hash.txt
+
+# Editor / OS files
+.DS_Store
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Docker
+.dockerignore
+# (Keep docker-compose.yml as it describes the environment)
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
