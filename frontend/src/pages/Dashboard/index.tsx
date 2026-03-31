@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../../lib/api';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, 
   PieChart, Pie, Legend
 } from 'recharts';
 import { 
-  Building2, TrendingUp, TrendingDown, PackageCheck, 
-  FileCheck, Clock, CheckCircle2, AlertCircle, BarChart3, Receipt
+  Building2, PackageCheck, 
+  FileCheck, Clock, CheckCircle2, AlertCircle, BarChart3
 } from 'lucide-react';
 
 interface MetricPayload {
