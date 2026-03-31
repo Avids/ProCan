@@ -6,12 +6,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/(.*)",
-      "destination": "/frontend/dist/$1",
-      "continue": true
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/frontend/dist/index.html"
     }
   ]
