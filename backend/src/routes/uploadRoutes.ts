@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { upload } from '../middleware/upload';
+import { uploadToS3 } from '../utils/s3';
 
 const router = Router();
 router.use(authenticate);
@@ -9,7 +10,7 @@ router.get('/', (req, res) => {
   res.json({ message: 'Upload route is reachable' });
 });
 
-router.post('/', upload.single('file'), (req: any, res) => {
+router.post('/', upload.single('file'), async (req: any, res) => {
   console.log('Upload Request Received:', {
     user: req.user?.email,
     file: req.file ? {
@@ -24,17 +25,13 @@ router.post('/', upload.single('file'), (req: any, res) => {
     return res.status(400).json({ message: 'No file uploaded' });
   }
 
-  // On Vercel: memory storage → convert to base64 data URL
-  if (req.file.buffer) {
-    const base64 = req.file.buffer.toString('base64');
-    const mimeType = req.file.mimetype || 'application/octet-stream';
-    const dataUrl = `data:${mimeType};base64,${base64}`;
-    return res.json({ url: dataUrl, filename: req.file.originalname });
+  try {
+    const s3Url = await uploadToS3(req.file);
+    return res.json({ url: s3Url, filename: req.file.originalname });
+  } catch (error: any) {
+    console.error('S3 Upload Error:', error);
+    return res.status(500).json({ message: 'Failed to upload to S3' });
   }
-
-  // Locally: disk storage → return static file path
-  const fileUrl = `/uploads/${req.file.filename}`;
-  res.json({ url: fileUrl, filename: req.file.originalname });
 });
 
 export default router;
