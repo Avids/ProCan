@@ -70,6 +70,11 @@ export default function EVMIndex() {
   const [saving, setSaving] = useState(false);
   const [evmState, setEvmState] = useState<EvmState>(EMPTY_STATE);
 
+  // Refs for chart containers — used by html2canvas for PDF export
+  const sCurveRef = useRef<HTMLDivElement>(null);
+  const indexRef  = useRef<HTMLDivElement>(null);
+  const varRef    = useRef<HTMLDivElement>(null);
+
   // ── Calculate metrics ──────────────────────────────────────────────────────
   const calcData = useMemo(() => {
     const rows = evmState.actuals || [];
@@ -208,19 +213,25 @@ export default function EVMIndex() {
     if (!kpis.bac || calcData.labels.length === 0) {
       alert('Enter at least one month of actual data first.'); return;
     }
+    // Charts must be rendered to be captured — ensure user is on dashboard tab
+    if (activeTab !== 'dash') {
+      alert('Please switch to the EVM Dashboard tab so charts are visible, then export again.'); return;
+    }
 
-    // Dynamic import – jspdf already installed
-    const { jsPDF } = await import('jspdf');
-    const autoTable = (await import('jspdf-autotable')).default;
+    const { jsPDF }    = await import('jspdf');
+    const autoTable    = (await import('jspdf-autotable')).default;
+    const html2canvas  = (await import('html2canvas')).default;
 
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    const pw = doc.internal.pageSize.getWidth() - 28;
+    const doc      = new jsPDF({ unit: 'mm', format: 'a4' });
+    const pageW    = doc.internal.pageSize.getWidth();
+    const pageH    = doc.internal.pageSize.getHeight();
+    const pw       = pageW - 28; // printable width
     const projectName = activeProject?.name ?? 'EVM Report';
+    const ts = `Exported ${new Date().toLocaleDateString()}`;
 
-    // ── Header helper ──
     const header = (title: string, sub: string) => {
       doc.setFillColor(24, 95, 165);
-      doc.rect(0, 0, doc.internal.pageSize.getWidth(), 18, 'F');
+      doc.rect(0, 0, pageW, 18, 'F');
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(255);
       doc.text(title, 14, 11);
       doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(200, 220, 255);
@@ -228,25 +239,45 @@ export default function EVMIndex() {
       doc.setTextColor(0);
     };
 
-    const tableStyle = () => ({
+    const tStyle = () => ({
       styles: { fontSize: 8 },
       headStyles: { fillColor: [24, 95, 165] as [number,number,number], textColor: 255, fontStyle: 'bold' as const },
       alternateRowStyles: { fillColor: [244, 248, 253] as [number,number,number] },
       margin: { left: 14, right: 14 }
     });
 
-    // ── Page 1: KPIs + Detail table ──
-    header(`${projectName} — EVM Dashboard`, `BAC: ${fmt1(kpis.bac)} hrs  |  Exported ${new Date().toLocaleDateString()}`);
+    // ── Capture a chart container div as a PNG data URL ──
+    const captureDiv = async (ref: React.RefObject<HTMLDivElement>): Promise<string | null> => {
+      if (!ref.current) return null;
+      try {
+        const canvas = await html2canvas(ref.current, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true,
+          logging: false,
+        });
+        return canvas.toDataURL('image/png');
+      } catch { return null; }
+    };
 
+    // Capture all charts in parallel
+    const [imgSCurve, imgIndex, imgVar] = await Promise.all([
+      captureDiv(sCurveRef),
+      captureDiv(indexRef),
+      captureDiv(varRef),
+    ]);
+
+    // ─── PAGE 1: KPI Summary ───
+    header(`${projectName} — EVM Dashboard`, `BAC: ${fmt1(kpis.bac)} hrs  |  ${ts}`);
     doc.setFontSize(9); doc.setFont('helvetica', 'bold');
     doc.setTextColor(24, 95, 165); doc.text('Key Performance Indicators', 14, 26); doc.setTextColor(0);
 
     (autoTable as any)(doc, {
       startY: 30,
       body: [
-        ['EV', fmt1(kpis.curEV) + ' h',  'PV',  fmt1(kpis.curPV) + ' h',  'AC',  fmt1(kpis.curAC) + ' h'],
-        ['CPI', fmt2(kpis.curCPI),        'SPI', fmt2(kpis.curSPI),         'BAC', fmt1(kpis.bac)  + ' h'],
-        ['CV',  sign(kpis.cv)  + fmt1(kpis.cv)  + ' h', 'SV', sign(kpis.sv)  + fmt1(kpis.sv) + ' h',  'EAC', fmt1(kpis.eac) + ' h'],
+        ['EV',  fmt1(kpis.curEV)  + ' h', 'PV',  fmt1(kpis.curPV)  + ' h', 'AC',  fmt1(kpis.curAC) + ' h'],
+        ['CPI', fmt2(kpis.curCPI),         'SPI', fmt2(kpis.curSPI),         'BAC', fmt1(kpis.bac)   + ' h'],
+        ['CV',  sign(kpis.cv)  + fmt1(kpis.cv)  + ' h', 'SV',  sign(kpis.sv)  + fmt1(kpis.sv)  + ' h', 'EAC', fmt1(kpis.eac) + ' h'],
         ['VAC', sign(kpis.vac) + fmt1(kpis.vac) + ' h', 'ETC', fmt1(kpis.etc) + ' h', '', ''],
       ],
       styles: { fontSize: 9 },
@@ -255,40 +286,53 @@ export default function EVMIndex() {
       margin: { left: 14, right: 14 }
     });
 
-    let y = (doc as any).lastAutoTable.finalY + 8;
+    // ─── PAGE 2: Charts ───
+    doc.addPage();
+    header(`${projectName} — Charts`, ts);
+    let y = 22;
 
-    doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-    doc.setTextColor(24, 95, 165); doc.text('Period Detail', 14, y); doc.setTextColor(0);
+    for (const entry of [
+      { img: imgSCurve, title: 'Earned Value S-Curve',            h: 62 },
+      { img: imgIndex,  title: 'Performance Indices (CPI & SPI)', h: 52 },
+      { img: imgVar,    title: 'Variance (CV & SV)',              h: 52 },
+    ]) {
+      if (!entry.img) continue;
+      if (y + entry.h + 12 > pageH - 10) { doc.addPage(); header(`${projectName} — Charts (cont.)`, ts); y = 22; }
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+      doc.setTextColor(24, 95, 165); doc.text(entry.title, 14, y + 5); doc.setTextColor(0);
+      doc.addImage(entry.img, 'PNG', 14, y + 8, pw, entry.h);
+      y += entry.h + 16;
+    }
 
+    // ─── PAGE 3: Period Detail ───
+    doc.addPage();
+    header(`${projectName} — Period Detail`, ts);
     (autoTable as any)(doc, {
-      startY: y + 4,
+      startY: 24,
       head: [['Month', 'PV (h)', 'EV (h)', 'AC (h)', 'SV (h)', 'CV (h)', 'SPI', 'CPI']],
       body: calcData.labels.map((l, i) => [
         l,
-        calcData.pv[i]?.toFixed(1),
-        calcData.ev[i]?.toFixed(1),
-        calcData.ac[i]?.toFixed(1),
+        calcData.pv[i]?.toFixed(1), calcData.ev[i]?.toFixed(1), calcData.ac[i]?.toFixed(1),
         sign(calcData.sv[i]) + calcData.sv[i]?.toFixed(1),
         sign(calcData.cv[i]) + calcData.cv[i]?.toFixed(1),
-        calcData.spi[i]?.toFixed(2),
-        calcData.cpi[i]?.toFixed(2),
+        calcData.spi[i]?.toFixed(2), calcData.cpi[i]?.toFixed(2),
       ]),
-      ...tableStyle()
+      ...tStyle()
     });
 
-    // ── Page 2: Abbreviations ──
+    // ─── PAGE 4: Abbreviations ───
     doc.addPage();
     header('Abbreviations & Definitions', 'EVM Dashboard reference');
     (autoTable as any)(doc, {
       startY: 26,
       head: [['Abbreviation', 'Full Name', 'Definition']],
       body: ABBREV_LIST,
-      ...tableStyle(),
+      ...tStyle(),
       columnStyles: { 0: { fontStyle: 'bold' as const, cellWidth: 22 }, 1: { cellWidth: 50 } }
     });
 
     doc.save(`${projectName.replace(/[^a-z0-9]/gi, '_')}_EVM_dashboard.pdf`);
-  }, [calcData, activeProject]);
+  }, [calcData, activeProject, activeTab]);
 
   // ── Guard: no project ──────────────────────────────────────────────────────
   if (!activeProject) return (
@@ -506,7 +550,7 @@ export default function EVMIndex() {
                   </div>
 
                   {/* ── Chart 1: S-Curve ── */}
-                  <div className={cardCls}>
+                  <div ref={sCurveRef} className={cardCls}>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-1">Earned Value S-Curve</h3>
                     <ChartLegend items={[
                       { color: '#3b82f6', label: 'PV – planned value' },
@@ -527,7 +571,7 @@ export default function EVMIndex() {
                   </div>
 
                   {/* ── Chart 2: Performance Indices ── */}
-                  <div className={cardCls}>
+                  <div ref={indexRef} className={cardCls}>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-1">Performance Indices</h3>
                     <ChartLegend items={[
                       { color: '#10b981', label: 'CPI' },
@@ -548,7 +592,7 @@ export default function EVMIndex() {
                   </div>
 
                   {/* ── Chart 3: Variance ── */}
-                  <div className={cardCls}>
+                  <div ref={varRef} className={cardCls}>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-1">Variance (CV &amp; SV)</h3>
                     <ChartLegend items={[
                       { color: '#10b981', label: 'CV – cost variance' },
