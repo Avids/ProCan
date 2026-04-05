@@ -10,7 +10,14 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
 
     // 1. Role-Based Access Scoping for Projects
     // If COMPANY_MANAGER -> query all active. If PROJECT_MANAGER -> query only assigned.
-    let projectFilter: any = { status: 'ACTIVE' };
+    let projectFilter: any = {};
+    
+    if (req.query.projectId) {
+       projectFilter.id = String(req.query.projectId);
+    } else {
+       // Global fallback (though frontend shouldn't hit this anymore)
+       projectFilter.status = 'ACTIVE';
+    }
     
     if (userRole === 'PROJECT_MANAGER' || userRole === 'PROJECT_ENGINEER' || userRole === 'SITE_SUPERVISOR' || userRole === 'COORDINATOR') {
        projectFilter.projectAssignments = {

@@ -42,7 +42,7 @@ export default function DashboardIndex() {
     const fetchDashboard = async () => {
       setLoading(true);
       try {
-        const res = await api.get('/dashboard/summary');
+        const res = await api.get(`/dashboard/summary?projectId=${activeProject.id}`);
         setData(res.data);
       } catch (err) {
         console.error(err);
@@ -111,8 +111,8 @@ export default function DashboardIndex() {
       
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Global Portfolio Overview</h1>
-        <p className="text-slate-500 dark:text-slate-400 mt-1">Real-time aggregations tracking financial health and project delivery.</p>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Project Overview</h1>
+        <p className="text-slate-500 dark:text-slate-400 mt-1">Real-time aggregations tracking financial health and project delivery for {activeProject.name}.</p>
       </div>
 
       {/* KPI 8-Grid Array */}
@@ -146,7 +146,7 @@ export default function DashboardIndex() {
         <div className="bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
           <div className="absolute right-0 top-0 w-32 h-32 bg-slate-50 dark:bg-slate-900/50 rounded-full -mr-16 -mt-16 pointer-events-none"></div>
           <div className="flex items-center justify-between mb-4 relative">
-            <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400">Global SPI / CPI Indices</h3>
+            <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400">Project SPI / CPI Indices</h3>
             <div className="text-slate-800 dark:text-slate-200 flex items-center gap-1 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-xs">
               INDEX 1.0 = TARGET
             </div>
@@ -215,7 +215,7 @@ export default function DashboardIndex() {
          
          {/* Donut Chart */}
          <div className="bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2 text-center md:text-left">Global Project Health</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2 text-center md:text-left">Local Project Health</h3>
             <p className="text-xs text-slate-500 mb-6 text-center md:text-left">Based on calculated SPI thresholds.</p>
             <div className="flex-1 min-h-[300px] w-full relative">
                <ResponsiveContainer width="100%" height="100%">
@@ -250,7 +250,7 @@ export default function DashboardIndex() {
 
          {/* Bar Chart */}
          <div className="bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:col-span-2">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">Firm-Wide Materials Logistics</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">Project Materials Logistics</h3>
             <p className="text-xs text-slate-500 mb-6">Aggregated tracking of all material workflows mapped across every vendor.</p>
             <div className="flex-1 w-full min-h-[300px]">
                <ResponsiveContainer width="100%" height="100%">
