@@ -6,9 +6,17 @@ import {
 } from 'recharts';
 import { 
   Building2, PackageCheck, 
-  FileCheck, Clock, CheckCircle2, AlertCircle, BarChart3, FolderKanban
+  FileCheck, Clock, CheckCircle2, AlertCircle, BarChart3, FolderKanban,
+  User, HardHat, Ruler, Wrench, CalendarDays, Timer, CalendarCheck
 } from 'lucide-react';
 import { useProject } from '../../contexts/ProjectContext';
+
+interface ProjectDetail {
+  startDate: string | null;
+  finishDate: string | null;
+  durationMonths: number | null;
+  metadata: Record<string, string> | null;
+}
 
 interface MetricPayload {
   kpi: {
@@ -34,16 +42,24 @@ export default function DashboardIndex() {
   const [data, setData] = useState<MetricPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [projectDetail, setProjectDetail] = useState<ProjectDetail | null>(null);
 
   useEffect(() => {
-    // Only fetch dashboard analytics if a project is active (we could pass projectId here later too)
     if (!activeProject) return;
-    
     const fetchDashboard = async () => {
       setLoading(true);
       try {
-        const res = await api.get(`/dashboard/summary?projectId=${activeProject.id}`);
-        setData(res.data);
+        const [summaryRes, detailRes] = await Promise.all([
+          api.get(`/dashboard/summary?projectId=${activeProject.id}`),
+          api.get(`/projects/${activeProject.id}`),
+        ]);
+        setData(summaryRes.data);
+        setProjectDetail({
+          startDate: detailRes.data.startDate,
+          finishDate: detailRes.data.finishDate,
+          durationMonths: detailRes.data.durationMonths,
+          metadata: detailRes.data.metadata || null,
+        });
       } catch (err) {
         console.error(err);
         setError(true);
@@ -112,8 +128,34 @@ export default function DashboardIndex() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Project Overview</h1>
-        <p className="text-slate-500 dark:text-slate-400 mt-1">Real-time aggregations tracking financial health and project delivery for {activeProject.name}.</p>
+        <p className="text-slate-500 dark:text-slate-400 mt-1">Real-time aggregations for <strong>{activeProject.name}</strong> ({activeProject.projectNumber})</p>
       </div>
+
+      {/* Project Info Strip */}
+      {projectDetail && (
+        <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4 text-sm">
+            {([
+              { icon: User,         label: 'Owner',           value: projectDetail.metadata?.ownerName },
+              { icon: HardHat,      label: 'General Contractor', value: projectDetail.metadata?.generalContractorName },
+              { icon: Ruler,        label: 'Architect',        value: projectDetail.metadata?.architectName },
+              { icon: Wrench,       label: 'Engineer',         value: projectDetail.metadata?.engineerName },
+              { icon: CalendarDays, label: 'Start Date',       value: projectDetail.startDate ? new Date(projectDetail.startDate).toLocaleDateString('en-CA') : null },
+              { icon: Timer,        label: 'Duration',         value: projectDetail.durationMonths ? `${projectDetail.durationMonths} months` : null },
+              { icon: CalendarCheck,label: 'Planned Finish',   value: projectDetail.finishDate ? new Date(projectDetail.finishDate).toLocaleDateString('en-CA') : null },
+            ] as { icon: any; label: string; value: string | null | undefined }[]).map(({ icon: Icon, label, value }) => (
+              <div key={label} className="flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <Icon className="w-3.5 h-3.5" />{label}
+                </div>
+                <div className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                  {value || <span className="text-slate-400 italic text-xs">Not set</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* KPI 8-Grid Array */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

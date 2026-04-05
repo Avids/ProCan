@@ -14,6 +14,7 @@ interface ProjectListItem {
   description: string | null; totalValue: number | null; durationMonths: number | null;
   laborHours: number | null; laborValue: number | null; materialCost: number | null;
   status: string; startDate: string | null; finishDate: string | null;
+  metadata?: { ownerName?: string; generalContractorName?: string; architectName?: string; engineerName?: string } | null;
   _count?: { projectAssignments: number; materials: number; };
   projectAssignments?: { employeeId: string; positionInProject: string }[];
 }
@@ -213,9 +214,10 @@ export default function ProjectsIndex() {
               <tr>
                 <th className="px-6 py-4">Project ID</th>
                 <th className="px-6 py-4">Project Name</th>
+                <th className="px-6 py-4 hidden lg:table-cell">Owner / GC</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Value ($)</th>
-                <th className="px-6 py-4 hidden md:table-cell">Start Date</th>
+                <th className="px-6 py-4 hidden md:table-cell">Schedule</th>
                 <th className="px-6 py-4 text-right">Team</th>
                 {(canMutate || canDelete) && <th className="px-6 py-4 text-right">Actions</th>}
               </tr>
@@ -236,8 +238,20 @@ export default function ProjectsIndex() {
                 <tr key={project.id} onClick={() => navigate(`/projects/${project.id}`)}
                   className="hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors group">
                   <td className="px-6 py-4 whitespace-nowrap font-medium text-slate-900 dark:text-white">{project.projectNumber}</td>
-                  <td className="px-6 py-4 font-medium">{project.name}
+                  <td className="px-6 py-4 font-medium">
+                    {project.name}
                     {project.location && <div className="text-xs text-slate-400 font-normal mt-0.5">{project.location}</div>}
+                  </td>
+                  <td className="px-6 py-4 hidden lg:table-cell">
+                    {project.metadata?.ownerName && (
+                      <div className="text-xs text-slate-700 dark:text-slate-300 font-medium">{project.metadata.ownerName}</div>
+                    )}
+                    {project.metadata?.generalContractorName && (
+                      <div className="text-xs text-slate-500 mt-0.5">{project.metadata.generalContractorName}</div>
+                    )}
+                    {!project.metadata?.ownerName && !project.metadata?.generalContractorName && (
+                      <span className="text-xs text-slate-400 italic">Not set</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2.5 py-1 text-xs font-semibold rounded-md border ${statusColor(project.status)}`}>{project.status.replace('_', ' ')}</span>
@@ -246,7 +260,18 @@ export default function ProjectsIndex() {
                     <div className="flex items-center gap-1"><DollarSign className="w-3.5 h-3.5 text-slate-400" />{project.totalValue ? Number(project.totalValue).toLocaleString() : 'TBD'}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-slate-500 hidden md:table-cell">
-                    <div className="flex items-center gap-2"><Calendar className="w-4 h-4" />{project.startDate ? new Date(project.startDate).toLocaleDateString() : 'N/A'}</div>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 flex-shrink-0" />
+                      <div>
+                        <div>{project.startDate ? new Date(project.startDate).toLocaleDateString('en-CA') : 'TBD'}</div>
+                        {project.durationMonths && (
+                          <div className="text-xs text-slate-400">
+                            {project.durationMonths} mo
+                            {project.finishDate ? ` → ${new Date(project.finishDate).toLocaleDateString('en-CA')}` : ''}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="flex justify-end gap-1">

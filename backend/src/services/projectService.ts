@@ -8,9 +8,13 @@ export const getAllProjects = async () => {
       id: true,
       projectNumber: true,
       name: true,
+      location: true,
       totalValue: true,
       status: true,
       startDate: true,
+      finishDate: true,
+      durationMonths: true,
+      metadata: true,
       _count: {
         select: {
           projectAssignments: true,
