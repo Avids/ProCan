@@ -102,15 +102,16 @@ export default function ProjectsIndex() {
     setIsLoading(false);
 
     setEditingProject(project);
+    const meta = (fullProject.metadata as any) || {};
     setForm({
       projectNumber: fullProject.projectNumber,
       name: fullProject.name || '',
       location: fullProject.location || '',
       description: fullProject.description || '',
-      generalContractorName: fullProject.generalContractorName || '',
-      ownerName: fullProject.ownerName || '',
-      architectName: fullProject.architectName || '',
-      engineerName: fullProject.engineerName || '',
+      generalContractorName: meta.generalContractorName || '',
+      ownerName: meta.ownerName || '',
+      architectName: meta.architectName || '',
+      engineerName: meta.engineerName || '',
       totalValue: fullProject.totalValue != null ? formatNumber(String(fullProject.totalValue)) : '',
       durationMonths: fullProject.durationMonths != null ? formatNumber(String(fullProject.durationMonths)) : '',
       laborHours: fullProject.laborHours != null ? formatNumber(String(fullProject.laborHours)) : '',

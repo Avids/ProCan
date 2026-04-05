@@ -19,7 +19,8 @@ router.post('/', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (r
 
     const project = await prisma.project.create({
       data: {
-        projectNumber, name, location, description, generalContractorName, ownerName, architectName, engineerName,
+        projectNumber, name, location, description,
+        metadata: { generalContractorName, ownerName, architectName, engineerName },
         totalValue: Number(totalValue),
         durationMonths: Number(durationMonths),
         laborHours: laborHours != null ? Number(laborHours) : undefined,
@@ -57,11 +58,22 @@ router.patch('/:id', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), asyn
     const before = await prisma.project.findUnique({ where: { id: req.params.id } });
     if (!before) return res.status(404).json({ message: 'Project not found' });
 
-    const { totalValue, durationMonths, startDate, finishDate, actualStartDate, actualFinishDate, laborHours, laborValue, materialCost, managerId, evmData, ...rest } = req.body;
+    const { totalValue, durationMonths, startDate, finishDate, actualStartDate, actualFinishDate, laborHours, laborValue, materialCost, managerId, evmData, generalContractorName, ownerName, architectName, engineerName, ...rest } = req.body;
+    
+    // We safely parse existing metadata to not overwrite unrelated keys
+    const metaObj = (before.metadata as object) || {};
+    const newMeta = {
+      ...metaObj,
+      ...(generalContractorName !== undefined ? { generalContractorName } : {}),
+      ...(ownerName !== undefined ? { ownerName } : {}),
+      ...(architectName !== undefined ? { architectName } : {}),
+      ...(engineerName !== undefined ? { engineerName } : {})
+    };
     const updated = await prisma.project.update({
       where: { id: req.params.id },
       data: {
         ...rest,
+        metadata: Object.keys(newMeta).length > 0 ? newMeta : undefined,
         ...(evmData !== undefined ? { evmData } : {}),
         ...(totalValue != null ? { totalValue: Number(totalValue) } : {}),
         ...(durationMonths != null ? { durationMonths: Number(durationMonths) } : {}),
