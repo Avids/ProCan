@@ -17,6 +17,7 @@ import VendorsIndex from './pages/Vendors/index';
 import SubmittalsIndex from './pages/Submittals/index';
 import RFIsIndex from './pages/RFIs/index';
 import EmployeesPage from './pages/Employees/index';
+import ProjectDirectory from './pages/ProjectDirectory';
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
               
               <Route path="projects" element={<ProjectsIndex />} />
               <Route path="projects/:id" element={<ProjectDetail />} />
+              <Route path="project-directory" element={<ProjectDirectory />} />
               
               <Route path="vendors" element={<VendorsIndex />} />
               <Route path="purchase-orders" element={<PurchaseOrderIndex />} />

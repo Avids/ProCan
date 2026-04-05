@@ -12,8 +12,10 @@ const PROJECT_STATUSES = ['PLANNING', 'ACTIVE', 'ON_HOLD', 'COMPLETED', 'ARCHIVE
 interface ProjectListItem {
   id: string; projectNumber: string; name: string; location: string | null;
   description: string | null; totalValue: number | null; durationMonths: number | null;
+  laborHours: number | null; laborValue: number | null; materialCost: number | null;
   status: string; startDate: string | null; finishDate: string | null;
   _count?: { projectAssignments: number; materials: number; };
+  projectAssignments?: { employeeId: string; positionInProject: string }[];
 }
 
 const statusColor = (s: string) => ({
@@ -26,7 +28,8 @@ const statusColor = (s: string) => ({
 
 const emptyForm = {
   projectNumber: '', name: '', location: '', description: '',
-  totalValue: '', durationMonths: '', startDate: '', finishDate: '', status: 'PLANNING'
+  totalValue: '', durationMonths: '', laborHours: '', laborValue: '', materialCost: '', 
+  managerId: '', startDate: '', finishDate: '', status: 'PLANNING'
 };
 
 export default function ProjectsIndex() {
@@ -36,6 +39,7 @@ export default function ProjectsIndex() {
   const navigate = useNavigate();
 
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [employees, setEmployees] = useState<{ id: string; firstName: string; lastName: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -51,8 +55,14 @@ export default function ProjectsIndex() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await api.get('/projects');
-      setProjects(res.data);
+      const [projRes, empRes] = await Promise.all([
+        api.get('/projects'),
+        api.get('/employees')
+      ]);
+      // Assuming get('/projects') can be modified to return basic assignment info, or we just do it via fetching the specific project. 
+      // Actually backend /projects endpoint doesn't return projectAssignments by default we just fetch employees for the dropdown.
+      setProjects(projRes.data);
+      setEmployees(empRes.data.filter((e: any) => e.isActive));
     } catch { setError('Failed to fetch projects.'); }
     finally { setIsLoading(false); }
   }, []);
@@ -64,14 +74,29 @@ export default function ProjectsIndex() {
     setEditingProject(null); setForm(emptyForm); setFormErrors({}); setSaveError(''); setSlideOpen(true);
   };
 
-  const openEdit = (e: React.MouseEvent, project: ProjectListItem) => {
+  const openEdit = async (e: React.MouseEvent, project: ProjectListItem) => {
     e.stopPropagation();
+    setIsLoading(true);
+    let managerId = '';
+    try {
+      // Fetch full project details to get assignments
+      const res = await api.get(`/projects/${project.id}`);
+      const fullProject = res.data;
+      const pmAssignment = fullProject.projectAssignments?.find((a: any) => a.positionInProject === 'Project Manager');
+      if (pmAssignment) managerId = pmAssignment.employeeId;
+    } catch (err) { console.error('Failed to load full project details', err); }
+    setIsLoading(false);
+
     setEditingProject(project);
     setForm({
       projectNumber: project.projectNumber, name: project.name,
       location: project.location || '', description: project.description || '',
       totalValue: project.totalValue != null ? String(project.totalValue) : '',
       durationMonths: project.durationMonths != null ? String(project.durationMonths) : '',
+      laborHours: project.laborHours != null ? String(project.laborHours) : '',
+      laborValue: project.laborValue != null ? String(project.laborValue) : '',
+      materialCost: project.materialCost != null ? String(project.materialCost) : '',
+      managerId,
       startDate: project.startDate?.split('T')[0] || '',
       finishDate: project.finishDate?.split('T')[0] || '',
       status: project.status
@@ -94,7 +119,16 @@ export default function ProjectsIndex() {
     if (!validate()) return;
     setIsSaving(true); setSaveError('');
     try {
-      const payload = { ...form, totalValue: Number(form.totalValue), durationMonths: Number(form.durationMonths) };
+      const payload = { 
+        ...form, 
+        totalValue: Number(form.totalValue), 
+        durationMonths: Number(form.durationMonths),
+        laborHours: form.laborHours ? Number(form.laborHours) : null,
+        laborValue: form.laborValue ? Number(form.laborValue) : null,
+        materialCost: form.materialCost ? Number(form.materialCost) : null,
+      };
+      if (!payload.managerId) delete (payload as any).managerId; // Send absent if empty
+      
       if (editingProject) await api.patch(`/projects/${editingProject.id}`, payload);
       else await api.post('/projects', payload);
       setSlideOpen(false); await fetchProjects();
@@ -246,13 +280,34 @@ export default function ProjectsIndex() {
           <FormField as="textarea" label="Description"
             value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief project overview..." />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
             <FormField as="input" type="number" label="Contract Value ($)" required placeholder="0"
               value={form.totalValue} onChange={e => setForm(f => ({ ...f, totalValue: e.target.value }))} error={formErrors.totalValue} />
             <FormField as="input" type="number" label="Duration (months)" required placeholder="e.g. 12"
               value={form.durationMonths} onChange={e => setForm(f => ({ ...f, durationMonths: e.target.value }))} error={formErrors.durationMonths} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+
+          <div className="space-y-4 pt-2">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">Project Budget & Team</h3>
+            
+            <FormField as="select" label="Assign Project Manager" value={form.managerId} onChange={e => setForm(f => ({ ...f, managerId: e.target.value }))}>
+              <option value="">-- No Manager Assigned --</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</option>
+              ))}
+            </FormField>
+
+            <div className="grid grid-cols-3 gap-4">
+               <FormField as="input" type="number" label="Labor Cost ($)" placeholder="0.00"
+                value={form.laborValue} onChange={e => setForm(f => ({ ...f, laborValue: e.target.value }))} />
+               <FormField as="input" type="number" label="Total Labor (Hrs)" placeholder="0"
+                value={form.laborHours} onChange={e => setForm(f => ({ ...f, laborHours: e.target.value }))} />
+               <FormField as="input" type="number" label="Material Cost ($)" placeholder="0.00"
+                value={form.materialCost} onChange={e => setForm(f => ({ ...f, materialCost: e.target.value }))} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">
             <FormField as="input" type="date" label="Planned Start Date" value={form.startDate}
               onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
             <FormField as="input" type="date" label="Planned Finish Date" value={form.finishDate}

@@ -13,7 +13,7 @@ router.get('/:id', getProject);
 // CREATE — Company Manager or Project Manager
 router.post('/', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (req: any, res, next) => {
   try {
-    const { projectNumber, name, location, description, totalValue, durationMonths, startDate, finishDate, status } = req.body;
+    const { projectNumber, name, location, description, totalValue, durationMonths, startDate, finishDate, status, laborHours, laborValue, materialCost, managerId } = req.body;
     if (!projectNumber || !name || totalValue == null || durationMonths == null)
       return res.status(400).json({ message: 'projectNumber, name, totalValue, and durationMonths are required' });
 
@@ -22,11 +22,27 @@ router.post('/', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (r
         projectNumber, name, location, description,
         totalValue: Number(totalValue),
         durationMonths: Number(durationMonths),
+        laborHours: laborHours != null ? Number(laborHours) : undefined,
+        laborValue: laborValue != null ? Number(laborValue) : undefined,
+        materialCost: materialCost != null ? Number(materialCost) : undefined,
         startDate: startDate ? new Date(startDate) : undefined,
         finishDate: finishDate ? new Date(finishDate) : undefined,
         status: status || 'PLANNING'
       }
     });
+
+    if (managerId) {
+      await prisma.projectAssignment.create({
+        data: {
+          projectId: project.id,
+          employeeId: managerId,
+          positionInProject: 'Project Manager',
+          moduleAccess: 'ALL',
+          assignedById: req.user.id
+        }
+      });
+    }
+
     await logActivity(req.user.id, 'CREATE', 'project', project.id, null, project);
     res.status(201).json(project);
   } catch (err: any) {
@@ -41,19 +57,46 @@ router.patch('/:id', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), asyn
     const before = await prisma.project.findUnique({ where: { id: req.params.id } });
     if (!before) return res.status(404).json({ message: 'Project not found' });
 
-    const { totalValue, durationMonths, startDate, finishDate, actualStartDate, actualFinishDate, ...rest } = req.body;
+    const { totalValue, durationMonths, startDate, finishDate, actualStartDate, actualFinishDate, laborHours, laborValue, materialCost, managerId, ...rest } = req.body;
     const updated = await prisma.project.update({
       where: { id: req.params.id },
       data: {
         ...rest,
         ...(totalValue != null ? { totalValue: Number(totalValue) } : {}),
         ...(durationMonths != null ? { durationMonths: Number(durationMonths) } : {}),
+        ...(laborHours != null ? { laborHours: Number(laborHours) } : {}),
+        ...(laborValue != null ? { laborValue: Number(laborValue) } : {}),
+        ...(materialCost != null ? { materialCost: Number(materialCost) } : {}),
         ...(startDate ? { startDate: new Date(startDate) } : {}),
         ...(finishDate ? { finishDate: new Date(finishDate) } : {}),
         ...(actualStartDate ? { actualStartDate: new Date(actualStartDate) } : {}),
         ...(actualFinishDate ? { actualFinishDate: new Date(actualFinishDate) } : {}),
       }
     });
+
+    if (managerId !== undefined) {
+      // First try to find if there is already a Project Manager assigned
+      const existingAssignment = await prisma.projectAssignment.findFirst({
+        where: { projectId: updated.id, positionInProject: 'Project Manager' }
+      });
+      
+      if (!managerId && existingAssignment) {
+        // user removed the manager -> delete
+        await prisma.projectAssignment.delete({ where: { id: existingAssignment.id } });
+      } else if (managerId && !existingAssignment) {
+        // create new
+        await prisma.projectAssignment.create({
+          data: { projectId: updated.id, employeeId: managerId, positionInProject: 'Project Manager', moduleAccess: 'ALL', assignedById: req.user.id }
+        });
+      } else if (managerId && existingAssignment && existingAssignment.employeeId !== managerId) {
+        // update existing
+        await prisma.projectAssignment.update({
+          where: { id: existingAssignment.id },
+          data: { employeeId: managerId }
+        });
+      }
+    }
+
     await logActivity(req.user.id, 'UPDATE', 'project', req.params.id, before, updated);
     res.json(updated);
   } catch (err) { next(err); }

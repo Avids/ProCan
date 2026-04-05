@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useProject } from '../contexts/ProjectContext';
-import { LayoutDashboard, Users, FolderKanban, ShoppingCart, PackageOpen, FileText, MessageSquare, Menu, LogOut, Bell, UserCog } from 'lucide-react';
+import { LayoutDashboard, Users, FolderKanban, ShoppingCart, PackageOpen, FileText, MessageSquare, Menu, LogOut, Bell, UserCog, Contact2 } from 'lucide-react';
 
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
@@ -13,6 +13,7 @@ export default function DashboardLayout() {
   const navigations = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Projects', path: '/projects', icon: FolderKanban },
+    { name: 'Project Directory', path: '/project-directory', icon: Contact2 },
     { name: 'Vendors', path: '/vendors', icon: Users },
     { name: 'Purchase Orders', path: '/purchase-orders', icon: ShoppingCart },
     { name: 'Materials', path: '/materials', icon: PackageOpen },
