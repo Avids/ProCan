@@ -102,7 +102,7 @@ export default function MaterialsIndex() {
       setVendors(vendRes.data);
     } catch { setError('Failed to load Materials data.'); }
     finally { setIsLoading(false); }
-  }, []);
+  }, [activeProject]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 

@@ -69,11 +69,11 @@ export default function PurchaseOrderIndex() {
       setData(posRes.data);
       setVendors(vendorsRes.data);
     } catch {
-      setError('Failed to load Purchase Orders.');
+      setError('Failed to load data.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [activeProject]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
