@@ -53,6 +53,18 @@ export default function ProjectsIndex() {
   const [deleteTarget, setDeleteTarget] = useState<ProjectListItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const formatNumber = (val: string) => {
+    const clean = String(val).replace(/[^0-9.]/g, '');
+    if (!clean) return '';
+    const parts = clean.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return parts.slice(0, 2).join('.');
+  };
+
+  const handleNumChange = (field: keyof typeof emptyForm, val: string) => {
+    setForm(f => ({ ...f, [field]: formatNumber(val) }));
+  };
+
   const fetchProjects = useCallback(async () => {
     try {
       const [projRes, empRes] = await Promise.all([
@@ -78,10 +90,11 @@ export default function ProjectsIndex() {
     e.stopPropagation();
     setIsLoading(true);
     let managerId = '';
+    let fullProject: any = project;
     try {
-      // Fetch full project details to get assignments
+      // Fetch full project details to get assignments and all fields
       const res = await api.get(`/projects/${project.id}`);
-      const fullProject = res.data;
+      fullProject = res.data;
       const pmAssignment = fullProject.projectAssignments?.find((a: any) => a.positionInProject === 'Project Manager');
       if (pmAssignment) managerId = pmAssignment.employeeId;
     } catch (err) { console.error('Failed to load full project details', err); }
@@ -89,17 +102,17 @@ export default function ProjectsIndex() {
 
     setEditingProject(project);
     setForm({
-      projectNumber: project.projectNumber, name: project.name,
-      location: project.location || '', description: project.description || '',
-      totalValue: project.totalValue != null ? String(project.totalValue) : '',
-      durationMonths: project.durationMonths != null ? String(project.durationMonths) : '',
-      laborHours: project.laborHours != null ? String(project.laborHours) : '',
-      laborValue: project.laborValue != null ? String(project.laborValue) : '',
-      materialCost: project.materialCost != null ? String(project.materialCost) : '',
+      projectNumber: fullProject.projectNumber, name: fullProject.name,
+      location: fullProject.location || '', description: fullProject.description || '',
+      totalValue: fullProject.totalValue != null ? formatNumber(String(fullProject.totalValue)) : '',
+      durationMonths: fullProject.durationMonths != null ? formatNumber(String(fullProject.durationMonths)) : '',
+      laborHours: fullProject.laborHours != null ? formatNumber(String(fullProject.laborHours)) : '',
+      laborValue: fullProject.laborValue != null ? formatNumber(String(fullProject.laborValue)) : '',
+      materialCost: fullProject.materialCost != null ? formatNumber(String(fullProject.materialCost)) : '',
       managerId,
-      startDate: project.startDate?.split('T')[0] || '',
-      finishDate: project.finishDate?.split('T')[0] || '',
-      status: project.status
+      startDate: fullProject.startDate?.split('T')[0] || '',
+      finishDate: fullProject.finishDate?.split('T')[0] || '',
+      status: fullProject.status
     });
     setFormErrors({}); setSaveError(''); setSlideOpen(true);
   };
@@ -108,8 +121,8 @@ export default function ProjectsIndex() {
     const errors: Partial<typeof emptyForm> = {};
     if (!form.projectNumber.trim()) errors.projectNumber = 'Project number is required';
     if (!form.name.trim()) errors.name = 'Project name is required';
-    if (!form.totalValue || isNaN(Number(form.totalValue))) errors.totalValue = 'Valid contract value is required';
-    if (!form.durationMonths || isNaN(Number(form.durationMonths))) errors.durationMonths = 'Duration in months is required';
+    if (!form.totalValue || isNaN(Number(form.totalValue.replace(/,/g, '')))) errors.totalValue = 'Valid contract value is required';
+    if (!form.durationMonths || isNaN(Number(form.durationMonths.replace(/,/g, '')))) errors.durationMonths = 'Duration in months is required';
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -121,11 +134,11 @@ export default function ProjectsIndex() {
     try {
       const payload = { 
         ...form, 
-        totalValue: Number(form.totalValue), 
-        durationMonths: Number(form.durationMonths),
-        laborHours: form.laborHours ? Number(form.laborHours) : null,
-        laborValue: form.laborValue ? Number(form.laborValue) : null,
-        materialCost: form.materialCost ? Number(form.materialCost) : null,
+        totalValue: Number(form.totalValue.replace(/,/g, '')), 
+        durationMonths: Number(form.durationMonths.replace(/,/g, '')),
+        laborHours: form.laborHours ? Number(form.laborHours.replace(/,/g, '')) : null,
+        laborValue: form.laborValue ? Number(form.laborValue.replace(/,/g, '')) : null,
+        materialCost: form.materialCost ? Number(form.materialCost.replace(/,/g, '')) : null,
       };
       if (!payload.managerId) delete (payload as any).managerId; // Send absent if empty
       
@@ -139,9 +152,10 @@ export default function ProjectsIndex() {
   const handleDelete = async () => {
     if (!deleteTarget) return; setIsDeleting(true);
     try {
-      await api.delete(`/projects/${deleteTarget.id}`);
+      // Archive instead of delete to preserve history
+      await api.patch(`/projects/${deleteTarget.id}`, { status: 'ARCHIVED' });
       setDeleteTarget(null); await fetchProjects();
-    } catch (err: any) { setDeleteTarget(null); setError(err.response?.data?.message || 'Failed to delete project.'); }
+    } catch (err: any) { setDeleteTarget(null); setError(err.response?.data?.message || 'Failed to archive project.'); }
     finally { setIsDeleting(false); }
   };
 
@@ -281,10 +295,10 @@ export default function ProjectsIndex() {
             value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief project overview..." />
 
           <div className="grid grid-cols-2 gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-            <FormField as="input" type="number" label="Contract Value ($)" required placeholder="0"
-              value={form.totalValue} onChange={e => setForm(f => ({ ...f, totalValue: e.target.value }))} error={formErrors.totalValue} />
-            <FormField as="input" type="number" label="Duration (months)" required placeholder="e.g. 12"
-              value={form.durationMonths} onChange={e => setForm(f => ({ ...f, durationMonths: e.target.value }))} error={formErrors.durationMonths} />
+            <FormField as="input" type="text" label="Contract Value ($)" required placeholder="0.00"
+              value={form.totalValue} onChange={(e: any) => handleNumChange('totalValue', e.target.value)} error={formErrors.totalValue} />
+            <FormField as="input" type="text" label="Duration (months)" required placeholder="e.g. 12"
+              value={form.durationMonths} onChange={(e: any) => handleNumChange('durationMonths', e.target.value)} error={formErrors.durationMonths} />
           </div>
 
           <div className="space-y-4 pt-2">
@@ -298,12 +312,12 @@ export default function ProjectsIndex() {
             </FormField>
 
             <div className="grid grid-cols-3 gap-4">
-               <FormField as="input" type="number" label="Labor Cost ($)" placeholder="0.00"
-                value={form.laborValue} onChange={e => setForm(f => ({ ...f, laborValue: e.target.value }))} />
-               <FormField as="input" type="number" label="Total Labor (Hrs)" placeholder="0"
-                value={form.laborHours} onChange={e => setForm(f => ({ ...f, laborHours: e.target.value }))} />
-               <FormField as="input" type="number" label="Material Cost ($)" placeholder="0.00"
-                value={form.materialCost} onChange={e => setForm(f => ({ ...f, materialCost: e.target.value }))} />
+               <FormField as="input" type="text" label="Labor Cost ($)" placeholder="0.00"
+                value={form.laborValue} onChange={(e: any) => handleNumChange('laborValue', e.target.value)} />
+               <FormField as="input" type="text" label="Total Labor (Hrs)" placeholder="0"
+                value={form.laborHours} onChange={(e: any) => handleNumChange('laborHours', e.target.value)} />
+               <FormField as="input" type="text" label="Material Cost ($)" placeholder="0.00"
+                value={form.materialCost} onChange={(e: any) => handleNumChange('materialCost', e.target.value)} />
             </div>
           </div>
 
@@ -331,8 +345,8 @@ export default function ProjectsIndex() {
       </SlideOver>
 
       <ConfirmDialog isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} isLoading={isDeleting}
-        title="Delete Project"
-        message={`Delete project "${deleteTarget?.name}"? This is permanent and irreversible. Projects with active materials cannot be deleted.`} />
+        title="Archive Project"
+        message={`Are you sure you want to archive project "${deleteTarget?.name}"? It will become in-active and hidden from the standard active views.`} />
     </div>
   );
 }
