@@ -4,6 +4,7 @@ import {
   PackageOpen, Search, ArrowUpDown, AlertCircle, CalendarClock, Box, Plus, Pencil, Trash2, FileSpreadsheet, FileDown
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProject } from '../../contexts/ProjectContext';
 import SlideOver from '../../components/ui/SlideOver';
 import FormField from '../../components/ui/FormField';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -19,14 +20,13 @@ interface Material {
   expectedDeliveryDate: string | null; releasedDate: string | null; leadTimeWeeks: number | null;
   notes: string | null; drawingReference: string | null; location: string | null;
   vendor: { companyName: string } | null;
-  project: { name: string; projectNumber: string } | null;
   purchaseOrder: { poNumber: string } | null;
 }
 interface POOption { id: string; poNumber: string; vendorId: string | null; vendorName: string | null; projectName: string | null; }
 interface DropdownOption { id: string; name: string; projectNumber?: string; companyName?: string; poNumber?: string; }
 
 const emptyForm = {
-  poId: '', projectId: '', vendorId: '', description: '', quantity: '',
+  poId: '', vendorId: '', description: '', quantity: '',
   unit: '', unitPrice: '', status: 'ORDERED', shopDrawingStatus: 'NOT_SUBMITTED',
   systemCategory: 'OTHER', leadTimeWeeks: '', expectedDeliveryDate: '',
   releasedDate: '', notes: '', drawingReference: '', location: ''
@@ -50,19 +50,18 @@ const shopBadge = (s: string) => ({
 
 export default function MaterialsIndex() {
   const { user } = useAuth();
+  const { activeProject } = useProject();
   const canMutate = ['COMPANY_MANAGER', 'PROJECT_MANAGER', 'PROJECT_ENGINEER', 'SITE_SUPERVISOR', 'COORDINATOR'].includes(user?.role || '');
   const canDelete = ['COMPANY_MANAGER', 'PROJECT_MANAGER', 'PROJECT_ENGINEER'].includes(user?.role || '');
 
   const [data, setData] = useState<Material[]>([]);
   const [pos, setPOs] = useState<POOption[]>([]);
-  const [projects, setProjects] = useState<DropdownOption[]>([]);
   const [vendors, setVendors] = useState<DropdownOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [projectFilter, setProjectFilter] = useState('ALL');
   const [sortField, setSortField] = useState('calculatedDelivery');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -85,11 +84,11 @@ export default function MaterialsIndex() {
   const isPastDue = (mat: Material) => { const ts = calcDeliveryTs(mat); return ts > 0 && !['DELIVERED', 'INSTALLED'].includes(mat.status) && ts < Date.now(); };
 
   const fetchAll = useCallback(async () => {
+    if (!activeProject) return;
     try {
-      const [matRes, poRes, projRes, vendRes] = await Promise.all([
-        api.get('/materials'),
-        api.get('/purchase-orders'),
-        api.get('/projects'),
+      const [matRes, poRes, vendRes] = await Promise.all([
+        api.get(`/materials?projectId=${activeProject.id}`),
+        api.get(`/purchase-orders?projectId=${activeProject.id}`),
         api.get('/vendors'),
       ]);
       setData(matRes.data);
@@ -100,7 +99,6 @@ export default function MaterialsIndex() {
         vendorName: p.vendor?.companyName || null,
         projectName: p.project?.name || null,
       })));
-      setProjects(projRes.data);
       setVendors(vendRes.data);
     } catch { setError('Failed to load Materials data.'); }
     finally { setIsLoading(false); }
@@ -108,13 +106,23 @@ export default function MaterialsIndex() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  if (!activeProject) {
+    return (
+      <div className="max-w-4xl mx-auto py-20 text-center animate-in fade-in zoom-in duration-500">
+        <PackageOpen className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2">Project Required</h2>
+        <p className="text-slate-500">Please select an Active Project from the top navigation bar to manage Materials.</p>
+      </div>
+    );
+  }
+
   const openCreate = () => {
     setEditingMat(null); setForm(emptyForm); setFormErrors({}); setSaveError(''); setSlideOpen(true);
   };
   const openEdit = (m: Material) => {
     setEditingMat(m);
     setForm({
-      poId: '', projectId: '', vendorId: '',
+      poId: '', vendorId: '',
       description: m.description, quantity: String(m.quantity), unit: m.unit,
       unitPrice: m.unitPrice != null ? String(m.unitPrice) : '',
       status: m.status, shopDrawingStatus: m.shopDrawingStatus, systemCategory: m.systemCategory,
@@ -137,7 +145,6 @@ export default function MaterialsIndex() {
 
   const validate = () => {
     const errors: Partial<typeof emptyForm> = {};
-    if (!editingMat && !form.projectId) errors.projectId = 'Project is required';
     if (!form.description.trim()) errors.description = 'Description is required';
     if (!form.quantity || isNaN(Number(form.quantity))) errors.quantity = 'Valid quantity is required';
     if (!form.unit.trim()) errors.unit = 'Unit is required';
@@ -150,7 +157,7 @@ export default function MaterialsIndex() {
     if (!validate()) return;
     setIsSaving(true); setSaveError('');
     try {
-      const payload = { ...form, quantity: Number(form.quantity), unitPrice: form.unitPrice ? Number(form.unitPrice) : undefined, leadTimeWeeks: form.leadTimeWeeks ? Number(form.leadTimeWeeks) : undefined };
+      const payload = { ...form, projectId: activeProject?.id, quantity: Number(form.quantity), unitPrice: form.unitPrice ? Number(form.unitPrice) : undefined, leadTimeWeeks: form.leadTimeWeeks ? Number(form.leadTimeWeeks) : undefined };
       if (editingMat) await api.patch(`/materials/${editingMat.id}`, payload);
       else await api.post('/materials', payload);
       setSlideOpen(false); await fetchAll();
@@ -172,16 +179,14 @@ export default function MaterialsIndex() {
 
   const uniqueStatuses = Array.from(new Set(data.map(d => d.status)));
   const uniqueCategories = Array.from(new Set(data.map(d => d.systemCategory)));
-  const uniqueProjects = Array.from(new Set(data.map(d => d.project?.name).filter(Boolean)));
 
   const filtered = data
     .filter(m => m.description.toLowerCase().includes(searchTerm.toLowerCase()) &&
       (statusFilter === 'ALL' || m.status === statusFilter) &&
-      (categoryFilter === 'ALL' || m.systemCategory === categoryFilter) &&
-      (projectFilter === 'ALL' || m.project?.name === projectFilter))
+      (categoryFilter === 'ALL' || m.systemCategory === categoryFilter))
     .sort((a: any, b: any) => {
-      let av = sortField === 'vendor.companyName' ? a.vendor?.companyName : sortField === 'project.name' ? a.project?.name : sortField === 'calculatedDelivery' ? calcDeliveryTs(a) : a[sortField];
-      let bv = sortField === 'vendor.companyName' ? b.vendor?.companyName : sortField === 'project.name' ? b.project?.name : sortField === 'calculatedDelivery' ? calcDeliveryTs(b) : b[sortField];
+      let av = sortField === 'vendor.companyName' ? a.vendor?.companyName : sortField === 'calculatedDelivery' ? calcDeliveryTs(a) : a[sortField];
+      let bv = sortField === 'vendor.companyName' ? b.vendor?.companyName : sortField === 'calculatedDelivery' ? calcDeliveryTs(b) : b[sortField];
       if (!av && !bv) return 0; if (!av) return sortDir === 'asc' ? 1 : -1; if (!bv) return sortDir === 'asc' ? -1 : 1;
       if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
       return sortDir === 'asc' ? av - bv : bv - av;
@@ -190,7 +195,6 @@ export default function MaterialsIndex() {
   const handleExportExcel = () => {
     const exportData = filtered.map(m => ({
       Description: m.description,
-      Project: m.project?.name || 'N/A',
       Vendor: m.vendor?.companyName || 'N/A',
       PO: m.purchaseOrder?.poNumber || 'N/A',
       Quantity: m.quantity,
@@ -205,28 +209,27 @@ export default function MaterialsIndex() {
       Location: m.location || ''
     }));
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = (projectFilter === 'ALL' ? 'All_Projects' : projectFilter).replace(/\s+/g, '_');
+    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
     exportToExcel(exportData, `MATERIALS_LIST_${dateStr}_${projectName}`, 'Materials');
   };
 
   const handleExportPDF = () => {
-    const columns = ['Description', 'Project', 'Vendor', 'Qty', 'Status', 'Delivery'];
+    const columns = ['Description', 'Vendor', 'Qty', 'Status', 'Delivery'];
     const body = filtered.map(m => [
       m.description,
-      m.project?.projectNumber || 'N/A',
       m.vendor?.companyName || 'N/A',
       `${m.quantity} ${m.unit}`,
       m.status,
       calcDeliveryStr(m)
     ]);
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = (projectFilter === 'ALL' ? 'All_Projects' : projectFilter).replace(/\s+/g, '_');
+    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
     exportToPDF(body, columns, `MATERIALS_LIST_${dateStr}_${projectName}`, 'Materials Procurement Tracking');
   };
 
   const cols = [
     { label: 'Description', field: 'description' },
-    { label: 'Vendor & Project', field: 'vendor.companyName' },
+    { label: 'Vendor', field: 'vendor.companyName' },
     { label: 'Qty / Unit', field: 'quantity' },
     { label: 'Status', field: 'status' },
     { label: 'Expected By', field: 'calculatedDelivery' },
@@ -267,7 +270,6 @@ export default function MaterialsIndex() {
           {[
             { val: statusFilter, set: setStatusFilter, opts: uniqueStatuses, ph: 'All Statuses' },
             { val: categoryFilter, set: setCategoryFilter, opts: uniqueCategories, ph: 'All Systems' },
-            { val: projectFilter, set: setProjectFilter, opts: uniqueProjects as string[], ph: 'All Projects' },
           ].map(({ val, set, opts, ph }) => (
             <select key={ph} value={val} onChange={e => set(e.target.value)}
               className="flex-1 lg:w-40 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white cursor-pointer">
@@ -316,7 +318,6 @@ export default function MaterialsIndex() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-slate-700 dark:text-slate-300">{mat.vendor?.companyName || '—'}</div>
-                      <div className="text-xs text-slate-500">{mat.project?.name || '—'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="font-bold text-slate-900 dark:text-white">{Number(mat.quantity).toLocaleString()}</span>
@@ -358,12 +359,6 @@ export default function MaterialsIndex() {
         <form onSubmit={handleSubmit} className="space-y-5">
           {!editingMat && (
             <div className="space-y-4">
-              {/* Project — always required */}
-              <FormField as="select" label="Project" required value={form.projectId} onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))} error={formErrors.projectId}>
-                <option value="">— Select Project —</option>
-                {projects.map((p: any) => <option key={p.id} value={p.id}>{p.projectNumber} — {p.name}</option>)}
-              </FormField>
-
               {/* PO — optional; auto-fills vendor when selected */}
               <FormField as="select" label="Purchase Order (optional)" value={form.poId} onChange={e => handlePOChange(e.target.value)}>
                 <option value="">— No PO yet —</option>

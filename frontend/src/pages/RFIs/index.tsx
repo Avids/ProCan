@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import api, { getAssetUrl } from '../../lib/api';
 import { MessageSquare, Search, ArrowUpDown, AlertCircle, Filter, Timer, MessageCircle, Plus, Pencil, Trash2, FileSpreadsheet, FileDown, Download, Paperclip, History as HistoryIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProject } from '../../contexts/ProjectContext';
 import SlideOver from '../../components/ui/SlideOver';
 import FormField from '../../components/ui/FormField';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -16,7 +17,6 @@ interface RFI {
   project: { name: string; projectNumber: string } | null;
   raisedBy: { firstName: string; lastName: string } | null;
 }
-interface ProjectOption { id: string; name: string; projectNumber: string; }
 
 const statusColor = (s: string) => ({
   CLOSED: 'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
@@ -25,19 +25,18 @@ const statusColor = (s: string) => ({
   DRAFT: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-400 dark:border-yellow-800',
 } as Record<string, string>)[s] || 'bg-slate-100 text-slate-700 border-slate-200';
 
-const emptyForm = { projectId: '', rfiNumber: '', revisionNumber: '0', title: '', question: '', response: '', status: 'DRAFT', dateRaised: '', responseDate: '' };
+const emptyForm = { rfiNumber: '', revisionNumber: '0', title: '', question: '', response: '', status: 'DRAFT', dateRaised: '', responseDate: '' };
 
 export default function RFIsIndex() {
   const { user } = useAuth();
+  const { activeProject } = useProject();
   const canMutate = ['COMPANY_MANAGER', 'PROJECT_MANAGER', 'PROJECT_ENGINEER', 'SITE_SUPERVISOR', 'COORDINATOR'].includes(user?.role || '');
 
   const [data, setData] = useState<RFI[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [projectFilter, setProjectFilter] = useState('ALL');
   const [sortField, setSortField] = useState('daysOpen');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -55,17 +54,25 @@ export default function RFIsIndex() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const fetchAll = useCallback(async () => {
+    if (!activeProject) return;
     try {
-      const [rfiRes, projRes] = await Promise.all([
-        api.get('/rfis'),
-        api.get('/projects')
-      ]);
-      setData(rfiRes.data); setProjects(projRes.data);
+      const res = await api.get(`/rfis?projectId=${activeProject.id}`);
+      setData(res.data);
     } catch { setError('Failed to fetch RFIs.'); }
     finally { setIsLoading(false); }
-  }, []);
+  }, [activeProject]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  if (!activeProject) {
+    return (
+      <div className="max-w-4xl mx-auto py-20 text-center animate-in fade-in zoom-in duration-500">
+        <MessageSquare className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2">Project Required</h2>
+        <p className="text-slate-500">Please select an Active Project from the top navigation bar to manage RFIs.</p>
+      </div>
+    );
+  }
 
   const getDaysOpen = (rfi: RFI) => {
     const start = new Date(rfi.dateRaised).getTime();
@@ -83,7 +90,7 @@ export default function RFIsIndex() {
   const openEdit = (r: RFI) => {
     setEditingRFI(r);
     setForm({ 
-      projectId: '', rfiNumber: r.rfiNumber, revisionNumber: String(r.revisionNumber ?? 0), 
+      rfiNumber: r.rfiNumber, revisionNumber: String(r.revisionNumber ?? 0), 
       title: r.title, question: r.question, response: r.response || '', 
       status: r.status, dateRaised: r.dateRaised.split('T')[0], 
       responseDate: r.responseDate?.split('T')[0] || '' 
@@ -118,7 +125,6 @@ export default function RFIsIndex() {
 
   const validate = () => {
     const errors: Partial<typeof emptyForm> = {};
-    if (!editingRFI && !form.projectId) errors.projectId = 'Project is required';
     if (!form.rfiNumber.trim()) errors.rfiNumber = 'RFI Number is required';
     if (!form.title.trim()) errors.title = 'Title is required';
     if (!form.question.trim()) errors.question = 'Question is required';
@@ -140,6 +146,7 @@ export default function RFIsIndex() {
 
       const payload = { 
         ...form, 
+        projectId: activeProject?.id,
         revisionNumber: Number(form.revisionNumber),
         attachment1Url 
       };
@@ -177,8 +184,7 @@ export default function RFIsIndex() {
 
   const filtered = data
     .filter(r => (r.question?.toLowerCase().includes(searchTerm.toLowerCase()) || r.rfiNumber.toLowerCase().includes(searchTerm.toLowerCase())) &&
-      (statusFilter === 'ALL' || r.status === statusFilter) &&
-      (projectFilter === 'ALL' || r.project?.name === projectFilter))
+      (statusFilter === 'ALL' || r.status === statusFilter))
     .sort((a, b) => {
       let av: any = sortField === 'project' ? a.project?.name : sortField === 'daysOpen' ? getDaysOpen(a) : (a as any)[sortField];
       let bv: any = sortField === 'project' ? b.project?.name : sortField === 'daysOpen' ? getDaysOpen(b) : (b as any)[sortField];
@@ -199,7 +205,7 @@ export default function RFIsIndex() {
       Response: r.response || 'Pending'
     }));
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = (projectFilter === 'ALL' ? 'All_Projects' : projectFilter).replace(/\s+/g, '_');
+    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
     exportToExcel(exportData, `RFI_LIST_${dateStr}_${projectName}`, 'RFIs');
   };
 
@@ -214,7 +220,7 @@ export default function RFIsIndex() {
       getDaysOpen(r)
     ]);
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = (projectFilter === 'ALL' ? 'All_Projects' : projectFilter).replace(/\s+/g, '_');
+    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
     exportToPDF(body, columns, `RFI_LIST_${dateStr}_${projectName}`, 'RFI Register');
   };
 
@@ -274,10 +280,6 @@ export default function RFIsIndex() {
               {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-rose-500 dark:text-white cursor-pointer w-44">
-            <option value="ALL">All Projects</option>
-            {uniqueProjects.map(p => <option key={p as string} value={p as string}>{p}</option>)}
-          </select>
         </div>
       </div>
 
@@ -288,7 +290,7 @@ export default function RFIsIndex() {
           <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
             <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-medium border-b border-slate-200 dark:border-slate-800 uppercase text-[11px] tracking-wider">
               <tr>
-                {[{ l: 'RFI Overview', f: 'rfiNumber' }, { l: 'Rev', f: 'revisionNumber' }, { l: 'Project', f: 'project' }, { l: 'Status', f: 'status' }, { l: 'Days Open', f: 'daysOpen' }, { l: 'Action Dates', f: 'dateRaised' }].map(c => (
+                {[{ l: 'RFI Overview', f: 'rfiNumber' }, { l: 'Rev', f: 'revisionNumber' }, { l: 'Status', f: 'status' }, { l: 'Days Open', f: 'daysOpen' }, { l: 'Action Dates', f: 'dateRaised' }].map(c => (
                   <th key={c.f} onClick={() => handleSort(c.f)} className="px-6 py-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 group select-none">
                     <div className="flex items-center gap-2">{c.l} <ArrowUpDown className={`w-3 h-3 ${sortField === c.f ? 'text-rose-500' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} /></div>
                   </th>
@@ -325,10 +327,7 @@ export default function RFIsIndex() {
                       <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-1 rounded border bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700`}>
                         Rev {rfi.revisionNumber ?? 0}
                       </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{rfi.project?.name || '—'}</div>
-                      {rfi.raisedBy && <div className="text-xs text-slate-500">{rfi.raisedBy.firstName} {rfi.raisedBy.lastName}</div>}
+                      {rfi.raisedBy && <div className="text-xs text-slate-500 mt-1">{rfi.raisedBy.firstName} {rfi.raisedBy.lastName}</div>}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-widest rounded-full border ${statusColor(rfi.status)}`}>{rfi.status}</span>
@@ -399,12 +398,6 @@ export default function RFIsIndex() {
         title={editingRFI ? 'Edit RFI' : 'Raise New RFI'}
         subtitle={editingRFI ? `RFI ${editingRFI.rfiNumber}` : 'Submit a request for information'}>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {!editingRFI && (
-            <FormField as="select" label="Project" required value={form.projectId} onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))} error={formErrors.projectId}>
-              <option value="">— Select Project —</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.projectNumber} — {p.name}</option>)}
-            </FormField>
-          )}
           <div className="grid grid-cols-2 gap-4">
             <FormField as="input" label="RFI Number" required placeholder="e.g. RFI-001"
               value={form.rfiNumber} onChange={e => setForm(f => ({ ...f, rfiNumber: e.target.value }))} error={formErrors.rfiNumber} />

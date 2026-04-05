@@ -3,6 +3,7 @@ import api from '../../lib/api';
 import { ShoppingCart, Search, ArrowUpDown, AlertCircle, FileText, Factory, Filter, Plus, Pencil, Trash2, FileSpreadsheet, FileDown, Download } from 'lucide-react';
 import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProject } from '../../contexts/ProjectContext';
 import SlideOver from '../../components/ui/SlideOver';
 import FormField from '../../components/ui/FormField';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -13,13 +14,11 @@ interface PurchaseOrder {
   id: string; poNumber: string; totalAmount: number | null; status: string;
   poDate: string | null; notes: string | null;
   vendor: { companyName: string } | null;
-  project: { name: string; projectNumber?: string } | null;
 }
 interface VendorOption { id: string; companyName: string; }
-interface ProjectOption { id: string; name: string; projectNumber: string; }
 
 const emptyForm = {
-  poNumber: '', vendorId: '', projectId: '', totalAmount: '',
+  poNumber: '', vendorId: '', totalAmount: '',
   status: 'DRAFT', poDate: '', notes: ''
 };
 
@@ -36,18 +35,17 @@ const statusBadge = (status: string) => {
 
 export default function PurchaseOrderIndex() {
   const { user } = useAuth();
+  const { activeProject } = useProject();
   const canMutate = ['COMPANY_MANAGER', 'PROJECT_MANAGER', 'PROJECT_ENGINEER', 'SITE_SUPERVISOR', 'COORDINATOR'].includes(user?.role || '');
   const canDelete = ['COMPANY_MANAGER', 'PROJECT_MANAGER'].includes(user?.role || '');
 
   const [data, setData] = useState<PurchaseOrder[]>([]);
   const [vendors, setVendors] = useState<VendorOption[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [projectFilter, setProjectFilter] = useState('ALL');
   const [sortField, setSortField] = useState('poDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -62,15 +60,14 @@ export default function PurchaseOrderIndex() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchAll = useCallback(async () => {
+    if (!activeProject) return;
     try {
-      const [posRes, vendorsRes, projectsRes] = await Promise.all([
-        api.get('/purchase-orders'),
+      const [posRes, vendorsRes] = await Promise.all([
+        api.get(`/purchase-orders?projectId=${activeProject.id}`),
         api.get('/vendors'),
-        api.get('/projects'),
       ]);
       setData(posRes.data);
       setVendors(vendorsRes.data);
-      setProjects(projectsRes.data);
     } catch {
       setError('Failed to load Purchase Orders.');
     } finally {
@@ -79,6 +76,16 @@ export default function PurchaseOrderIndex() {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  if (!activeProject) {
+    return (
+      <div className="max-w-4xl mx-auto py-20 text-center animate-in fade-in zoom-in duration-500">
+        <ShoppingCart className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2">Project Required</h2>
+        <p className="text-slate-500">Please select an Active Project from the top navigation bar to manage Purchase Orders.</p>
+      </div>
+    );
+  }
 
   const openCreate = () => {
     setEditingPO(null);
@@ -93,7 +100,6 @@ export default function PurchaseOrderIndex() {
     setForm({
       poNumber: po.poNumber,
       vendorId: '',
-      projectId: '',
       totalAmount: String(po.totalAmount ?? ''),
       status: po.status,
       poDate: po.poDate ? po.poDate.split('T')[0] : '',
@@ -108,7 +114,6 @@ export default function PurchaseOrderIndex() {
     const errors: Partial<typeof emptyForm> = {};
     if (!form.poNumber.trim()) errors.poNumber = 'PO Number is required';
     if (!editingPO && !form.vendorId) errors.vendorId = 'Vendor is required';
-    if (!editingPO && !form.projectId) errors.projectId = 'Project is required';
     if (!form.totalAmount || isNaN(Number(form.totalAmount))) errors.totalAmount = 'Valid amount is required';
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -125,7 +130,7 @@ export default function PurchaseOrderIndex() {
     setIsSaving(true);
     setSaveError('');
     try {
-      const payload = { ...form, totalAmount: Number(form.totalAmount) };
+      const payload = { ...form, projectId: activeProject?.id, totalAmount: Number(form.totalAmount) };
       if (editingPO) {
         await api.patch(`/purchase-orders/${editingPO.id}`, payload);
       } else {
@@ -155,18 +160,16 @@ export default function PurchaseOrderIndex() {
     }
   };
 
-  const uniqueProjects = Array.from(new Set(data.map(d => d.project?.name).filter(Boolean)));
   const uniqueStatuses = Array.from(new Set(data.map(d => d.status)));
 
   const filtered = data
     .filter(item => {
       return item.poNumber.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        (statusFilter === 'ALL' || item.status === statusFilter) &&
-        (projectFilter === 'ALL' || item.project?.name === projectFilter);
+        (statusFilter === 'ALL' || item.status === statusFilter);
     })
     .sort((a: any, b: any) => {
-      let av = sortField.includes('.') ? (sortField === 'vendor.companyName' ? a.vendor?.companyName : a.project?.name) : a[sortField];
-      let bv = sortField.includes('.') ? (sortField === 'vendor.companyName' ? b.vendor?.companyName : b.project?.name) : b[sortField];
+      let av = sortField.includes('.') ? (sortField === 'vendor.companyName' ? a.vendor?.companyName : null) : a[sortField];
+      let bv = sortField.includes('.') ? (sortField === 'vendor.companyName' ? b.vendor?.companyName : null) : b[sortField];
       if (av == null) return 1; if (bv == null) return -1;
       if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
       return sortDir === 'asc' ? av - bv : bv - av;
@@ -175,7 +178,6 @@ export default function PurchaseOrderIndex() {
   const cols = [
     { label: 'PO Number', field: 'poNumber' },
     { label: 'Vendor', field: 'vendor.companyName' },
-    { label: 'Project', field: 'project.name' },
     { label: 'Date', field: 'poDate' },
     { label: 'Total Amount', field: 'totalAmount' },
     { label: 'Status', field: 'status' },
@@ -185,28 +187,26 @@ export default function PurchaseOrderIndex() {
     const exportData = filtered.map(po => ({
       'PO Number': po.poNumber,
       Vendor: po.vendor?.companyName || '—',
-      Project: po.project?.name || '—',
       Date: po.poDate ? po.poDate.split('T')[0] : '—',
       Amount: po.totalAmount || 0,
       Status: po.status
     }));
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = (projectFilter === 'ALL' ? 'All_Projects' : projectFilter).replace(/\s+/g, '_');
+    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
     exportToExcel(exportData, `PO_LIST_${dateStr}_${projectName}`, 'Purchase Orders');
   };
 
   const handleExportPDF = () => {
-    const columns = ['PO #', 'Vendor', 'Project', 'Date', 'Amount', 'Status'];
+    const columns = ['PO #', 'Vendor', 'Date', 'Amount', 'Status'];
     const body = filtered.map(po => [
       po.poNumber,
       po.vendor?.companyName || '',
-      po.project?.name || '',
       po.poDate ? po.poDate.split('T')[0] : '',
       `$${(po.totalAmount || 0).toLocaleString()}`,
       po.status
     ]);
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = (projectFilter === 'ALL' ? 'All_Projects' : projectFilter).replace(/\s+/g, '_');
+    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
     exportToPDF(body, columns, `PO_LIST_${dateStr}_${projectName}`, 'Purchase Order Register');
   };
 
@@ -215,7 +215,6 @@ export default function PurchaseOrderIndex() {
     const body = [
       ['PO Number', po.poNumber],
       ['Vendor', po.vendor?.companyName || '—'],
-      ['Project', po.project?.name || '—'],
       ['Date', po.poDate ? po.poDate.split('T')[0] : '—'],
       ['Amount', po.totalAmount != null ? `$${Number(po.totalAmount).toLocaleString()}` : '—'],
       ['Status', po.status],
@@ -269,14 +268,6 @@ export default function PurchaseOrderIndex() {
               {uniqueStatuses.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
             </select>
           </div>
-          <div className="relative">
-            <Factory className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)}
-              className="w-full sm:w-44 pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-white cursor-pointer">
-              <option value="ALL">All Projects</option>
-              {uniqueProjects.map(p => <option key={p as string} value={p as string}>{p}</option>)}
-            </select>
-          </div>
         </div>
       </div>
 
@@ -320,7 +311,6 @@ export default function PurchaseOrderIndex() {
                 <tr key={po.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors group">
                   <td className="px-6 py-4 font-bold text-slate-900 dark:text-white whitespace-nowrap">{po.poNumber}</td>
                   <td className="px-6 py-4 font-medium">{po.vendor?.companyName || '—'}</td>
-                  <td className="px-6 py-4 text-slate-500">{po.project?.name || '—'}</td>
                   <td className="px-6 py-4 whitespace-nowrap">{po.poDate ? new Date(po.poDate).toLocaleDateString() : '—'}</td>
                   <td className="px-6 py-4 whitespace-nowrap font-medium text-slate-900 dark:text-white">
                     {po.totalAmount != null ? `$${Number(po.totalAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
@@ -372,12 +362,6 @@ export default function PurchaseOrderIndex() {
                 error={formErrors.vendorId}>
                 <option value="">— Select Vendor —</option>
                 {vendors.map(v => <option key={v.id} value={v.id}>{v.companyName}</option>)}
-              </FormField>
-              <FormField as="select" label="Project" required
-                value={form.projectId} onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}
-                error={formErrors.projectId}>
-                <option value="">— Select Project —</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.projectNumber} — {p.name}</option>)}
               </FormField>
             </>
           )}

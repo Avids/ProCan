@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import api, { getAssetUrl } from '../../lib/api';
 import { FileText, Search, ArrowUpDown, AlertCircle, Filter, CalendarClock, History, Plus, Pencil, Trash2, GitBranch, FileSpreadsheet, FileDown, Download, Paperclip } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProject } from '../../contexts/ProjectContext';
 import SlideOver from '../../components/ui/SlideOver';
 import FormField from '../../components/ui/FormField';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -13,7 +14,6 @@ interface Submittal {
   id: string; submittalNumber: string; revisionNumber: number; title: string; description: string | null;
   status: string; submittedDate: string | null; reviewDurationDays: number | null; dueDate: string | null; notes: string | null;
   attachment1Url: string | null; attachment2Url: string | null;
-  project: { name: string; projectNumber: string } | null;
   createdBy: { firstName: string; lastName: string } | null;
 }
 interface ProjectOption { id: string; name: string; projectNumber: string; }
@@ -32,19 +32,18 @@ const revBadgeColor = (rev: number) =>
     ? 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
     : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800';
 
-const emptyForm = { projectId: '', submittalNumber: '', revisionNumber: '0', title: '', description: '', status: 'DRAFT', submittedDate: '', reviewDurationDays: '', dueDate: '', notes: '' };
+const emptyForm = { submittalNumber: '', revisionNumber: '0', title: '', description: '', status: 'DRAFT', submittedDate: '', reviewDurationDays: '', dueDate: '', notes: '' };
 
 export default function SubmittalsIndex() {
   const { user } = useAuth();
+  const { activeProject } = useProject();
   const canMutate = ['COMPANY_MANAGER', 'PROJECT_MANAGER', 'PROJECT_ENGINEER', 'SITE_SUPERVISOR', 'COORDINATOR'].includes(user?.role || '');
 
   const [data, setData] = useState<Submittal[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [projectFilter, setProjectFilter] = useState('ALL');
   const [sortField, setSortField] = useState('submittalNumber');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -62,18 +61,25 @@ export default function SubmittalsIndex() {
   const [deleteTarget, setDeleteTarget] = useState<Submittal | null>(null);
 
   const fetchAll = useCallback(async () => {
+    if (!activeProject) return;
     try {
-      const [subRes, projRes] = await Promise.all([
-        api.get('/submittals'),
-        api.get('/projects')
-      ]);
-      setData(subRes.data);
-      setProjects(projRes.data);
+      const res = await api.get(`/submittals?projectId=${activeProject.id}`);
+      setData(res.data);
     } catch { setError('Failed to fetch Submittals.'); }
     finally { setIsLoading(false); }
-  }, []);
+  }, [activeProject]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  if (!activeProject) {
+    return (
+      <div className="max-w-4xl mx-auto py-20 text-center animate-in fade-in zoom-in duration-500">
+        <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2">Project Required</h2>
+        <p className="text-slate-500">Please select an Active Project from the top navigation bar to manage Submittals.</p>
+      </div>
+    );
+  }
 
   const openCreate = () => {
     setEditingSub(null); setForm(emptyForm); setFormErrors({}); setSaveError(''); setSlideOpen(true);
@@ -81,7 +87,7 @@ export default function SubmittalsIndex() {
   const openEdit = (s: Submittal) => {
     setEditingSub(s);
     setForm({
-      projectId: '', submittalNumber: s.submittalNumber, revisionNumber: String(s.revisionNumber ?? 0),
+      submittalNumber: s.submittalNumber, revisionNumber: String(s.revisionNumber ?? 0),
       title: s.title, description: s.description || '', status: s.status,
       submittedDate: s.submittedDate?.split('T')[0] || '',
       reviewDurationDays: s.reviewDurationDays != null ? String(s.reviewDurationDays) : '',
@@ -107,7 +113,6 @@ export default function SubmittalsIndex() {
 
   const validate = () => {
     const errors: Partial<typeof emptyForm> = {};
-    if (!editingSub && !form.projectId) errors.projectId = 'Project is required';
     if (!form.submittalNumber.trim()) errors.submittalNumber = 'Submittal number is required';
     if (!form.title.trim()) errors.title = 'Title is required';
     if (form.revisionNumber === '' || isNaN(Number(form.revisionNumber)) || Number(form.revisionNumber) < 0)
@@ -155,6 +160,7 @@ export default function SubmittalsIndex() {
 
       const payload = { 
         ...form, 
+        projectId: activeProject?.id,
         revisionNumber: Number(form.revisionNumber), 
         reviewDurationDays: form.reviewDurationDays ? Number(form.reviewDurationDays) : undefined,
         attachment1Url
@@ -193,14 +199,12 @@ export default function SubmittalsIndex() {
   };
 
   const isOverdue = (s: Submittal) => s.dueDate && s.status !== 'APPROVED' && new Date(s.dueDate) < new Date();
-  const uniqueProjects = Array.from(new Set(data.map(d => d.project?.name).filter(Boolean)));
   const uniqueStatuses = Array.from(new Set(data.map(d => d.status)));
 
   const filtered = data
     .filter(s =>
       (s.title.toLowerCase().includes(searchTerm.toLowerCase()) || s.submittalNumber.toLowerCase().includes(searchTerm.toLowerCase())) &&
-      (statusFilter === 'ALL' || s.status === statusFilter) &&
-      (projectFilter === 'ALL' || s.project?.name === projectFilter))
+      (statusFilter === 'ALL' || s.status === statusFilter))
     .sort((a: any, b: any) => {
       const av = sortField === 'revisionNumber' ? a.revisionNumber : a[sortField];
       const bv = sortField === 'revisionNumber' ? b.revisionNumber : b[sortField];
@@ -214,7 +218,6 @@ export default function SubmittalsIndex() {
     const exportData = filtered.map(s => ({
       Number: s.submittalNumber,
       Revision: s.revisionNumber,
-      Project: s.project?.name || 'N/A',
       Title: s.title,
       Status: s.status,
       'Submitted Date': s.submittedDate?.split('T')[0] || 'N/A',
@@ -222,22 +225,21 @@ export default function SubmittalsIndex() {
       'Created By': `${s.createdBy?.firstName} ${s.createdBy?.lastName}`
     }));
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = (projectFilter === 'ALL' ? 'All_Projects' : projectFilter).replace(/\s+/g, '_');
+    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
     exportToExcel(exportData, `SUBMITTAL_LIST_${dateStr}_${projectName}`, 'Submittals');
   };
 
   const handleExportPDF = () => {
-    const columns = ['Number', 'Rev', 'Project', 'Title', 'Status', 'Due Date'];
+    const columns = ['Number', 'Rev', 'Title', 'Status', 'Due Date'];
     const body = filtered.map(s => [
       s.submittalNumber,
       s.revisionNumber,
-      s.project?.projectNumber || 'N/A',
       s.title,
       s.status,
       s.dueDate?.split('T')[0] || 'N/A'
     ]);
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = (projectFilter === 'ALL' ? 'All_Projects' : projectFilter).replace(/\s+/g, '_');
+    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
     exportToPDF(body, columns, `SUBMITTAL_LIST_${dateStr}_${projectName}`, 'Submittal Register');
   };
 
@@ -246,7 +248,6 @@ export default function SubmittalsIndex() {
     const body = [
       ['Submittal Number', s.submittalNumber],
       ['Revision', String(s.revisionNumber)],
-      ['Project', `${s.project?.projectNumber} - ${s.project?.name}`],
       ['Title', s.title],
       ['Description', s.description || 'N/A'],
       ['Status', s.status],
@@ -262,7 +263,6 @@ export default function SubmittalsIndex() {
   const cols = [
     { label: 'Submittal #', field: 'submittalNumber' },
     { label: 'Rev', field: 'revisionNumber' },
-    { label: 'Project', field: 'project' },
     { label: 'Status', field: 'status' },
     { label: 'Submitted', field: 'submittedDate' },
     { label: 'Due Date', field: 'dueDate' },
@@ -306,10 +306,6 @@ export default function SubmittalsIndex() {
               {uniqueStatuses.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
             </select>
           </div>
-          <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500 dark:text-white cursor-pointer w-44">
-            <option value="ALL">All Projects</option>
-            {uniqueProjects.map(p => <option key={p as string} value={p as string}>{p}</option>)}
-          </select>
         </div>
       </div>
 
@@ -358,10 +354,8 @@ export default function SubmittalsIndex() {
                       </span>
                     </td>
 
-                    {/* Project + submitted by */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{sub.project?.name || '—'}</div>
-                      <div className="text-xs text-slate-500">{sub.createdBy ? `${sub.createdBy.firstName} ${sub.createdBy.lastName}` : '—'}</div>
+                      <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{sub.createdBy ? `${sub.createdBy.firstName} ${sub.createdBy.lastName}` : '—'}</div>
                     </td>
 
                     {/* Status */}
@@ -449,13 +443,6 @@ export default function SubmittalsIndex() {
         title={editingSub ? 'Edit Submittal' : 'New Submittal'}
         subtitle={editingSub ? `${editingSub.submittalNumber} — Rev ${editingSub.revisionNumber}` : 'Create and track a new engineering submittal'}>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {!editingSub && (
-            <FormField as="select" label="Project" required value={form.projectId} onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))} error={formErrors.projectId}>
-              <option value="">— Select Project —</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.projectNumber} — {p.name}</option>)}
-            </FormField>
-          )}
-
           <div className="grid grid-cols-2 gap-4">
             <FormField as="input" label="Submittal Number" required placeholder="e.g. SUB-001"
               value={form.submittalNumber} onChange={e => setForm(f => ({ ...f, submittalNumber: e.target.value }))} error={formErrors.submittalNumber} />
