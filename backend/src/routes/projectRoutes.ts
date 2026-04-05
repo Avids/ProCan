@@ -13,13 +13,13 @@ router.get('/:id', getProject);
 // CREATE — Company Manager or Project Manager
 router.post('/', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (req: any, res, next) => {
   try {
-    const { projectNumber, name, location, description, totalValue, durationMonths, startDate, finishDate, status, laborHours, laborValue, materialCost, managerId } = req.body;
+    const { projectNumber, name, location, description, generalContractorName, ownerName, architectName, engineerName, totalValue, durationMonths, startDate, finishDate, status, laborHours, laborValue, materialCost, managerId } = req.body;
     if (!projectNumber || !name || totalValue == null || durationMonths == null)
       return res.status(400).json({ message: 'projectNumber, name, totalValue, and durationMonths are required' });
 
     const project = await prisma.project.create({
       data: {
-        projectNumber, name, location, description,
+        projectNumber, name, location, description, generalContractorName, ownerName, architectName, engineerName,
         totalValue: Number(totalValue),
         durationMonths: Number(durationMonths),
         laborHours: laborHours != null ? Number(laborHours) : undefined,

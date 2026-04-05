@@ -167,6 +167,10 @@ model Project {
   name             String
   location         String?
   description      String?
+  generalContractorName String?
+  ownerName        String?
+  architectName    String?
+  engineerName     String?
   totalValue       Float
   laborHours       Float?
   laborValue       Float?

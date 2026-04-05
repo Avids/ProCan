@@ -28,6 +28,7 @@ const statusColor = (s: string) => ({
 
 const emptyForm = {
   projectNumber: '', name: '', location: '', description: '',
+  generalContractorName: '', ownerName: '', architectName: '', engineerName: '',
   totalValue: '', durationMonths: '', laborHours: '', laborValue: '', materialCost: '', 
   managerId: '', startDate: '', finishDate: '', status: 'PLANNING'
 };
@@ -102,8 +103,14 @@ export default function ProjectsIndex() {
 
     setEditingProject(project);
     setForm({
-      projectNumber: fullProject.projectNumber, name: fullProject.name,
-      location: fullProject.location || '', description: fullProject.description || '',
+      projectNumber: fullProject.projectNumber,
+      name: fullProject.name || '',
+      location: fullProject.location || '',
+      description: fullProject.description || '',
+      generalContractorName: fullProject.generalContractorName || '',
+      ownerName: fullProject.ownerName || '',
+      architectName: fullProject.architectName || '',
+      engineerName: fullProject.engineerName || '',
       totalValue: fullProject.totalValue != null ? formatNumber(String(fullProject.totalValue)) : '',
       durationMonths: fullProject.durationMonths != null ? formatNumber(String(fullProject.durationMonths)) : '',
       laborHours: fullProject.laborHours != null ? formatNumber(String(fullProject.laborHours)) : '',
@@ -293,6 +300,16 @@ export default function ProjectsIndex() {
             value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
           <FormField as="textarea" label="Description"
             value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief project overview..." />
+          <div className="grid grid-cols-2 gap-4">
+             <FormField as="input" label="Owner Name" placeholder="e.g. Acme Corp"
+              value={form.ownerName} onChange={e => setForm(f => ({ ...f, ownerName: e.target.value }))} />
+             <FormField as="input" label="General Contractor" placeholder="e.g. BuildCo"
+              value={form.generalContractorName} onChange={e => setForm(f => ({ ...f, generalContractorName: e.target.value }))} />
+             <FormField as="input" label="Architect" placeholder="e.g. Design Studio"
+              value={form.architectName} onChange={e => setForm(f => ({ ...f, architectName: e.target.value }))} />
+             <FormField as="input" label="Engineer" placeholder="e.g. Engineering Ltd"
+              value={form.engineerName} onChange={e => setForm(f => ({ ...f, engineerName: e.target.value }))} />
+          </div>
 
           <div className="grid grid-cols-2 gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
             <FormField as="input" type="text" label="Contract Value ($)" required placeholder="0.00"
