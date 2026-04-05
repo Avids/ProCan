@@ -1,0 +1,5 @@
+﻿src/pages/EVM/index.tsx(322,39): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: Props<{ AC: any; } & { AC: any; } & { AC: any; }, any>): ReactElement<any, string | JSXElementConstructor<any>>', gave the following error.
+    Type '"dashed"' is not assignable to type 'CurveType | undefined'.
+  Overload 2 of 2, '(props: Props<any, any>): ReactElement<any, string | JSXElementConstructor<any>>', gave the following error.
+    Type '"dashed"' is not assignable to type 'CurveType | undefined'.

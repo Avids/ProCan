@@ -302,7 +302,7 @@ export default function ProjectsIndex() {
           </div>
 
           <div className="space-y-4 pt-2">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">Project Budget & Team</h3>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">Project Team</h3>
             
             <FormField as="select" label="Assign Project Manager" value={form.managerId} onChange={e => setForm(f => ({ ...f, managerId: e.target.value }))}>
               <option value="">-- No Manager Assigned --</option>
@@ -310,15 +310,6 @@ export default function ProjectsIndex() {
                 <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</option>
               ))}
             </FormField>
-
-            <div className="grid grid-cols-3 gap-4">
-               <FormField as="input" type="text" label="Labor Cost ($)" placeholder="0.00"
-                value={form.laborValue} onChange={(e: any) => handleNumChange('laborValue', e.target.value)} />
-               <FormField as="input" type="text" label="Total Labor (Hrs)" placeholder="0"
-                value={form.laborHours} onChange={(e: any) => handleNumChange('laborHours', e.target.value)} />
-               <FormField as="input" type="text" label="Material Cost ($)" placeholder="0.00"
-                value={form.materialCost} onChange={(e: any) => handleNumChange('materialCost', e.target.value)} />
-            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">

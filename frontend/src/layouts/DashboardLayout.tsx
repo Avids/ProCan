@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useProject } from '../contexts/ProjectContext';
-import { LayoutDashboard, Users, FolderKanban, ShoppingCart, PackageOpen, FileText, MessageSquare, Menu, LogOut, Bell, UserCog, Contact2 } from 'lucide-react';
+import { LayoutDashboard, Users, FolderKanban, ShoppingCart, PackageOpen, FileText, MessageSquare, Menu, LogOut, Bell, UserCog, Contact2, TrendingUp } from 'lucide-react';
 
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
@@ -20,6 +20,7 @@ export default function DashboardLayout() {
     { name: 'Submittals', path: '/submittals', icon: FileText },
     { name: 'RFIs', path: '/rfis', icon: MessageSquare },
     ...(user?.role === 'COMPANY_MANAGER' ? [{ name: 'Employees', path: '/employees', icon: UserCog }] : []),
+    ...(['COMPANY_MANAGER', 'PROJECT_MANAGER'].includes(user?.role || '') ? [{ name: 'EVM Analytics', path: '/evm', icon: TrendingUp }] : []),
   ];
 
   const handleLogout = () => {

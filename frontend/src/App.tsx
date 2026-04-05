@@ -18,6 +18,7 @@ import SubmittalsIndex from './pages/Submittals/index';
 import RFIsIndex from './pages/RFIs/index';
 import EmployeesPage from './pages/Employees/index';
 import ProjectDirectory from './pages/ProjectDirectory';
+import EVMIndex from './pages/EVM/index';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
               
               <Route path="projects" element={<ProjectsIndex />} />
               <Route path="projects/:id" element={<ProjectDetail />} />
+              <Route path="evm" element={<EVMIndex />} />
               <Route path="project-directory" element={<ProjectDirectory />} />
               
               <Route path="vendors" element={<VendorsIndex />} />

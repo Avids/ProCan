@@ -57,11 +57,12 @@ router.patch('/:id', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), asyn
     const before = await prisma.project.findUnique({ where: { id: req.params.id } });
     if (!before) return res.status(404).json({ message: 'Project not found' });
 
-    const { totalValue, durationMonths, startDate, finishDate, actualStartDate, actualFinishDate, laborHours, laborValue, materialCost, managerId, ...rest } = req.body;
+    const { totalValue, durationMonths, startDate, finishDate, actualStartDate, actualFinishDate, laborHours, laborValue, materialCost, managerId, evmData, ...rest } = req.body;
     const updated = await prisma.project.update({
       where: { id: req.params.id },
       data: {
         ...rest,
+        ...(evmData !== undefined ? { evmData } : {}),
         ...(totalValue != null ? { totalValue: Number(totalValue) } : {}),
         ...(durationMonths != null ? { durationMonths: Number(durationMonths) } : {}),
         ...(laborHours != null ? { laborHours: Number(laborHours) } : {}),

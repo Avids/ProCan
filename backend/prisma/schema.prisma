@@ -179,6 +179,7 @@ model Project {
   actualFinishDate DateTime?
   status           ProjectStatus @default(PLANNING)
   metadata         Json?         // For future expandability
+  evmData          Json?         @default("{}") // High security explicit monthly EVM Configurations
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
