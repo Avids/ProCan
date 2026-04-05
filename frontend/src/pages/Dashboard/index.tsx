@@ -6,8 +6,9 @@ import {
 } from 'recharts';
 import { 
   Building2, PackageCheck, 
-  FileCheck, Clock, CheckCircle2, AlertCircle, BarChart3
+  FileCheck, Clock, CheckCircle2, AlertCircle, BarChart3, FolderKanban
 } from 'lucide-react';
+import { useProject } from '../../contexts/ProjectContext';
 
 interface MetricPayload {
   kpi: {
@@ -29,12 +30,17 @@ interface MetricPayload {
 }
 
 export default function DashboardIndex() {
+  const { activeProject, availableProjects, setActiveProject } = useProject();
   const [data, setData] = useState<MetricPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
+    // Only fetch dashboard analytics if a project is active (we could pass projectId here later too)
+    if (!activeProject) return;
+    
     const fetchDashboard = async () => {
+      setLoading(true);
       try {
         const res = await api.get('/dashboard/summary');
         setData(res.data);
@@ -46,7 +52,43 @@ export default function DashboardIndex() {
       }
     };
     fetchDashboard();
-  }, []);
+  }, [activeProject]);
+
+  if (!activeProject) {
+    return (
+      <div className="max-w-4xl mx-auto py-20 animate-in fade-in zoom-in duration-500">
+        <div className="text-center mb-12">
+          <div className="w-20 h-20 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-6 transform rotate-3">
+            <Building2 className="w-10 h-10 text-white" />
+          </div>
+          <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">Welcome to ProCan</h1>
+          <p className="text-lg text-slate-500 dark:text-slate-400 mt-3 max-w-xl mx-auto">Select a project below to enter your dedicated workspace and begin managing logs, field issues, and analytics.</p>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-4">
+          {availableProjects.length === 0 ? (
+            <div className="col-span-full py-12 text-center text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+              You are not assigned to any projects. Contact your administrator.
+            </div>
+          ) : (
+            availableProjects.map(proj => (
+              <button 
+                key={proj.id}
+                onClick={() => setActiveProject(proj)}
+                className="flex flex-col text-left bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all group"
+              >
+                <div className="w-10 h-10 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/30 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-4">
+                  <FolderKanban className="w-5 h-5" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-1">{proj.name}</h3>
+                <p className="text-sm font-medium text-slate-500 mt-1 uppercase tracking-wider">{proj.projectNumber}</p>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (loading) return (
      <div className="flex items-center justify-center min-h-[60vh]">

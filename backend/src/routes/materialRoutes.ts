@@ -14,8 +14,10 @@ const include = {
 
 // LIST
 router.get('/', async (req, res, next) => {
-  try { res.json(await prisma.material.findMany({ orderBy: { createdAt: 'desc' }, include })); }
-  catch (err) { next(err); }
+  try {
+    const where = req.query.projectId ? { projectId: String(req.query.projectId) } : {};
+    res.json(await prisma.material.findMany({ where, orderBy: { expectedDeliveryDate: 'asc' }, include }));
+  } catch (err) { next(err); }
 });
 
 // GET ONE

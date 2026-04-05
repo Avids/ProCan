@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useProject } from '../contexts/ProjectContext';
 import { LayoutDashboard, Users, FolderKanban, ShoppingCart, PackageOpen, FileText, MessageSquare, Menu, LogOut, Bell, UserCog } from 'lucide-react';
 
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
+  const { activeProject, setActiveProject, availableProjects } = useProject();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -79,12 +81,32 @@ export default function DashboardLayout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
         <header className="h-16 flex items-center justify-between px-4 sm:px-6 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
-          <button 
-            className="lg:hidden p-2 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-            onClick={() => setIsMobileMenuOpen(true)}
-          >
-            <Menu className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-4">
+            <button 
+              className="lg:hidden p-2 rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+            <div className="hidden sm:flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-500">Active Project:</span>
+              <select 
+                value={activeProject?.id || ''} 
+                onChange={(e) => {
+                  const p = availableProjects.find(proj => proj.id === e.target.value);
+                  setActiveProject(p || null);
+                }}
+                className="bg-transparent text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer border-b border-transparent hover:border-slate-300 dark:hover:border-slate-700 transition-colors focus:ring-0"
+              >
+                <option value="" disabled className="text-slate-500 font-normal">-- Select a Project --</option>
+                {availableProjects.map(p => (
+                  <option key={p.id} value={p.id} className="text-slate-900 font-normal">
+                    {p.projectNumber} - {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
           
           <div className="flex-1 flex justify-end items-center space-x-4">
             <button className="p-2 text-slate-400 hover:text-slate-500 transition-colors relative">

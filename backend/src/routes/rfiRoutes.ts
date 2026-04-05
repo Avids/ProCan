@@ -14,7 +14,10 @@ const include = {
 
 // LIST
 router.get('/', async (req, res, next) => {
-  try { res.json(await prisma.rFI.findMany({ orderBy: [{ rfiNumber: 'asc' }, { revisionNumber: 'asc' }], include })); }
+  try { 
+    const where = req.query.projectId ? { projectId: String(req.query.projectId) } : {};
+    res.json(await prisma.rFI.findMany({ where, orderBy: [{ rfiNumber: 'asc' }, { revisionNumber: 'asc' }], include })); 
+  }
   catch (err) { next(err); }
 });
 

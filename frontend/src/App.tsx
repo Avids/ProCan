@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { ProjectProvider } from './contexts/ProjectContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 // Layouts and Pages
@@ -17,37 +18,33 @@ import SubmittalsIndex from './pages/Submittals/index';
 import RFIsIndex from './pages/RFIs/index';
 import EmployeesPage from './pages/Employees/index';
 
-// Generic Layout Complete
-
-
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public Auth Routes */}
-          <Route path="/login" element={<Login />} />
+      <ProjectProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardIndex />} />
+              
+              <Route path="projects" element={<ProjectsIndex />} />
+              <Route path="projects/:id" element={<ProjectDetail />} />
+              
+              <Route path="vendors" element={<VendorsIndex />} />
+              <Route path="purchase-orders" element={<PurchaseOrderIndex />} />
+              <Route path="materials" element={<MaterialsIndex />} />
+              <Route path="submittals" element={<SubmittalsIndex />} />
+              <Route path="rfis" element={<RFIsIndex />} />
+              <Route path="employees" element={<EmployeesPage />} />
+            </Route>
 
-          {/* Protected Application Routes spanning Dashboard Shell */}
-          <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardIndex />} />
-            
-            <Route path="projects" element={<ProjectsIndex />} />
-            <Route path="projects/:id" element={<ProjectDetail />} />
-            
-            <Route path="vendors" element={<VendorsIndex />} />
-            <Route path="purchase-orders" element={<PurchaseOrderIndex />} />
-            <Route path="materials" element={<MaterialsIndex />} />
-            <Route path="submittals" element={<SubmittalsIndex />} />
-            <Route path="rfis" element={<RFIsIndex />} />
-            <Route path="employees" element={<EmployeesPage />} />
-          </Route>
-
-          {/* Catch-all 404 */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+            {/* Catch-all 404 */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </ProjectProvider>
     </AuthProvider>
   );
 }

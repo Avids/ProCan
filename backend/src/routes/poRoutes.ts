@@ -9,7 +9,9 @@ router.use(authenticate);
 // LIST
 router.get('/', async (req, res, next) => {
   try {
+    const where = req.query.projectId ? { projectId: String(req.query.projectId) } : {};
     const data = await prisma.purchaseOrder.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         vendor: { select: { id: true, companyName: true } },
