@@ -38,7 +38,7 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
     const activeProjectIds = activeProjects.map(p => p.id);
 
     // Filter to ensure we don't query empty IN arrays which might throw errors
-    const validProjectFilter = activeProjectIds.length > 0 ? { projectId: { in: activeProjectIds } } : { id: 'no-match' };
+    const validProjectFilter = activeProjectIds.length > 0 ? { projectId: { in: activeProjectIds } } : { projectId: '00000000-0000-0000-0000-000000000000' };
 
     // --- Core Aggregations ---
     
