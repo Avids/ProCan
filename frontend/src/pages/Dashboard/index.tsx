@@ -176,6 +176,23 @@ export default function DashboardIndex() {
         </div>
       </div>
 
+      {/* ── Project Parties & Schedule ── */}
+      <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-5">
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Project Parties &amp; Schedule</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-5">
+          {infoFields.map(({ icon: Icon, label, value }) => (
+            <div key={label} className="flex flex-col gap-1">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                <Icon className="w-3.5 h-3.5" />{label}
+              </div>
+              <div className="font-medium text-slate-800 dark:text-slate-200 text-sm truncate">
+                {value || <span className="text-slate-400 italic text-xs font-normal">Not set</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── SPI / CPI / Alerts row ── */}
       {project.health && project.alerts && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -252,22 +269,7 @@ export default function DashboardIndex() {
         </div>
       </div>
 
-      {/* ── Project Info Strip ── */}
-      <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-5">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Project Parties &amp; Schedule</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-5">
-          {infoFields.map(({ icon: Icon, label, value }) => (
-            <div key={label} className="flex flex-col gap-1">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                <Icon className="w-3.5 h-3.5" />{label}
-              </div>
-              <div className="font-medium text-slate-800 dark:text-slate-200 text-sm truncate">
-                {value || <span className="text-slate-400 italic text-xs font-normal">Not set</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+
 
       {/* ── Analytics KPI Grid ── */}
       <div>
