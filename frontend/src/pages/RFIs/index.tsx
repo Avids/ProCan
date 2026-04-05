@@ -125,7 +125,6 @@ export default function RFIsIndex() {
 
   const validate = () => {
     const errors: Partial<typeof emptyForm> = {};
-    if (!form.rfiNumber.trim()) errors.rfiNumber = 'RFI Number is required';
     if (!form.title.trim()) errors.title = 'Title is required';
     if (!form.question.trim()) errors.question = 'Question is required';
     setFormErrors(errors);
@@ -399,8 +398,8 @@ export default function RFIsIndex() {
         subtitle={editingRFI ? `RFI ${editingRFI.rfiNumber}` : 'Submit a request for information'}>
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="grid grid-cols-2 gap-4">
-            <FormField as="input" label="RFI Number" required placeholder="e.g. RFI-001"
-              value={form.rfiNumber} onChange={e => setForm(f => ({ ...f, rfiNumber: e.target.value }))} error={formErrors.rfiNumber} />
+            <FormField as="input" label="RFI Number" placeholder="Auto-generated on save"
+              value={form.rfiNumber} onChange={e => setForm(f => ({ ...f, rfiNumber: e.target.value }))} error={formErrors.rfiNumber} disabled />
             <FormField as="input" label="Revision #" value={form.revisionNumber} readOnly disabled hint="Increment via table" />
           </div>
           <FormField as="input" label="Title" required placeholder="Short descriptive title..."

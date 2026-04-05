@@ -113,7 +113,6 @@ export default function SubmittalsIndex() {
 
   const validate = () => {
     const errors: Partial<typeof emptyForm> = {};
-    if (!form.submittalNumber.trim()) errors.submittalNumber = 'Submittal number is required';
     if (!form.title.trim()) errors.title = 'Title is required';
     if (form.revisionNumber === '' || isNaN(Number(form.revisionNumber)) || Number(form.revisionNumber) < 0)
       errors.revisionNumber = 'Revision must be 0 or greater';
@@ -444,8 +443,9 @@ export default function SubmittalsIndex() {
         subtitle={editingSub ? `${editingSub.submittalNumber} — Rev ${editingSub.revisionNumber}` : 'Create and track a new engineering submittal'}>
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="grid grid-cols-2 gap-4">
-            <FormField as="input" label="Submittal Number" required placeholder="e.g. SUB-001"
-              value={form.submittalNumber} onChange={e => setForm(f => ({ ...f, submittalNumber: e.target.value }))} error={formErrors.submittalNumber} />
+            <FormField as="input" label="Submittal Number" placeholder="Auto-generated on save"
+              value={form.submittalNumber} onChange={e => setForm(f => ({ ...f, submittalNumber: e.target.value }))}
+              error={formErrors.submittalNumber} disabled />
             <FormField as="input" label="Revision #" value={form.revisionNumber} readOnly disabled hint="Increment via table" />
           </div>
 

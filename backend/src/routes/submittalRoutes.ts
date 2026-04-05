@@ -32,12 +32,27 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', async (req: any, res, next) => {
   try {
     const { projectId, submittalNumber, title, description, status, revisionNumber, submittedDate, dueDate, reviewDurationDays, notes } = req.body;
-    if (!projectId || !submittalNumber || !title)
-      return res.status(400).json({ message: 'projectId, submittalNumber, and title are required' });
+    if (!projectId || !title)
+      return res.status(400).json({ message: 'projectId and title are required' });
+
+    let finalSubmittalNumber = submittalNumber;
+    if (!finalSubmittalNumber) {
+      const maxSub = await prisma.submittal.findFirst({
+        where: { projectId },
+        orderBy: { submittalNumber: 'desc' }
+      });
+      if (maxSub && maxSub.submittalNumber.startsWith('SUB-')) {
+        const num = parseInt(maxSub.submittalNumber.replace('SUB-', ''), 10);
+        finalSubmittalNumber = `SUB-${String(num + 1).padStart(3, '0')}`;
+      } else {
+        const count = await prisma.submittal.count({ where: { projectId } });
+        finalSubmittalNumber = `SUB-${String(count + 1).padStart(3, '0')}`;
+      }
+    }
 
     const created = await prisma.submittal.create({
       data: {
-        projectId, submittalNumber, title, description,
+        projectId, submittalNumber: finalSubmittalNumber, title, description,
         status: status || 'DRAFT',
         createdById: req.user.id,
         revisionNumber: revisionNumber != null ? Number(revisionNumber) : 0,

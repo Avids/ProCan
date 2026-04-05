@@ -34,12 +34,27 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', async (req: any, res, next) => {
   try {
     const { projectId, rfiNumber, title, question, status, dateRaised, revisionNumber } = req.body;
-    if (!projectId || !rfiNumber || !question || !title)
-      return res.status(400).json({ message: 'projectId, rfiNumber, title, and question are required' });
+    if (!projectId || !question || !title)
+      return res.status(400).json({ message: 'projectId, title, and question are required' });
+
+    let finalRfiNumber = rfiNumber;
+    if (!finalRfiNumber) {
+      const maxRfi = await prisma.rFI.findFirst({
+        where: { projectId },
+        orderBy: { rfiNumber: 'desc' }
+      });
+      if (maxRfi && maxRfi.rfiNumber.startsWith('RFI-')) {
+        const num = parseInt(maxRfi.rfiNumber.replace('RFI-', ''), 10);
+        finalRfiNumber = `RFI-${String(num + 1).padStart(3, '0')}`;
+      } else {
+        const count = await prisma.rFI.count({ where: { projectId } });
+        finalRfiNumber = `RFI-${String(count + 1).padStart(3, '0')}`;
+      }
+    }
 
     const created = await prisma.rFI.create({
       data: {
-        projectId, rfiNumber, title, question,
+        projectId, rfiNumber: finalRfiNumber, title, question,
         status: status || 'DRAFT',
         revisionNumber: revisionNumber != null ? Number(revisionNumber) : 0,
         raisedById: req.user.id,

@@ -253,7 +253,7 @@ export default function ProjectsIndex() {
                   </td>
                   {(canMutate || canDelete) && (
                     <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1 transition-opacity">
                         {canMutate && (
                           <button onClick={e => openEdit(e, project)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Edit">
                             <Pencil className="w-4 h-4" />
