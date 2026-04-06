@@ -13,6 +13,7 @@ interface CompanySettings {
   phone: string | null;
   email: string | null;
   website: string | null;
+  logoUrl: string | null;
 }
 
 const inputCls = 'w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white placeholder:text-slate-400';
@@ -23,7 +24,7 @@ export default function SettingsIndex() {
 
   const [form, setForm] = useState<CompanySettings>({
     id: 'singleton', name: '', address: '', city: '', province: '',
-    postalCode: '', phone: '', email: '', website: '',
+    postalCode: '', phone: '', email: '', website: '', logoUrl: null,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,6 +47,21 @@ export default function SettingsIndex() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch { setError('Failed to save. Please try again.'); }
+    finally { setSaving(false); }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSaving(true); setError('');
+    const formData = new FormData();
+    formData.append('logo', file);
+    try {
+      const res = await api.post('/settings/logo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setForm(res.data);
+    } catch { setError('Failed to upload logo.'); }
     finally { setSaving(false); }
   };
 
@@ -73,10 +89,30 @@ export default function SettingsIndex() {
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Company Name *</label>
-          <input className={inputCls} value={form.name} onChange={e => set('name', e.target.value)}
-            placeholder="ProCan Construction Inc." disabled={!isManager} />
+        <div className="flex flex-col sm:flex-row gap-6 items-start">
+          <div className="relative group shrink-0">
+            <div className="w-24 h-24 rounded-2xl bg-slate-100 dark:bg-slate-900 border-2 border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden">
+              {form.logoUrl ? (
+                <img src={form.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
+              ) : (
+                <Building2 className="w-8 h-8 text-slate-300" />
+              )}
+            </div>
+            {isManager && (
+              <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl cursor-pointer">
+                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Change</span>
+                <input type="file" className="hidden" accept="image/jpeg,image/png" onChange={handleLogoUpload} />
+              </label>
+            )}
+          </div>
+
+          <div className="flex-1 w-full space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Company Name *</label>
+              <input className={inputCls} value={form.name} onChange={e => set('name', e.target.value)}
+                placeholder="ProCan Construction Inc." disabled={!isManager} />
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

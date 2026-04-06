@@ -7,7 +7,9 @@ import SlideOver from '../../components/ui/SlideOver';
 import FormField from '../../components/ui/FormField';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import AttachmentPanel from '../../components/AttachmentPanel';
+import ExportDropdown from '../../components/ExportDropdown';
 import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
+import { exportProfessionalPDF } from '../../utils/pdfExportUtils';
 
 const SUBMITTAL_STATUSES = ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'REVISE_AND_RESUBMIT'];
 
@@ -15,6 +17,8 @@ interface Submittal {
   id: string; submittalNumber: string; revisionNumber: number; title: string; description: string | null;
   status: string; submittedDate: string | null; reviewDurationDays: number | null; dueDate: string | null; notes: string | null;
   createdBy: { firstName: string; lastName: string } | null;
+  recipientContactId: string | null;
+  recipientContact: { firstName: string; lastName: string; stakeholder: { name: string } } | null;
 }
 interface ProjectOption { id: string; name: string; projectNumber: string; }
 
@@ -32,7 +36,7 @@ const revBadgeColor = (rev: number) =>
     ? 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
     : 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800';
 
-const emptyForm = { submittalNumber: '', revisionNumber: '0', title: '', description: '', status: 'DRAFT', submittedDate: '', reviewDurationDays: '', dueDate: '', notes: '' };
+const emptyForm = { submittalNumber: '', revisionNumber: '0', title: '', description: '', status: 'DRAFT', submittedDate: '', reviewDurationDays: '', dueDate: '', notes: '', recipientContactId: '' };
 
 export default function SubmittalsIndex() {
   const { user } = useAuth();
@@ -59,13 +63,22 @@ export default function SubmittalsIndex() {
 
   // Which rows have attachments panel expanded
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [stakeholders, setStakeholders] = useState<any[]>([]);
+  const [company, setCompany] = useState<any>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const fetchAll = useCallback(async () => {
     if (!activeProject) return;
     try {
-      const res = await api.get(`/submittals?projectId=${activeProject.id}`);
-      setData(res.data);
-    } catch { setError('Failed to fetch Submittals.'); }
+      const [subRes, stalkRes, compRes] = await Promise.all([
+        api.get(`/submittals?projectId=${activeProject.id}`),
+        api.get(`/stakeholders?projectId=${activeProject.id}`),
+        api.get('/settings/company')
+      ]);
+      setData(subRes.data);
+      setStakeholders(stalkRes.data);
+      setCompany(compRes.data);
+    } catch { setError('Failed to fetch data.'); }
     finally { setIsLoading(false); }
   }, [activeProject]);
 
@@ -91,7 +104,8 @@ export default function SubmittalsIndex() {
       title: s.title, description: s.description || '', status: s.status,
       submittedDate: s.submittedDate?.split('T')[0] || '',
       reviewDurationDays: s.reviewDurationDays != null ? String(s.reviewDurationDays) : '',
-      dueDate: s.dueDate?.split('T')[0] || '', notes: s.notes || ''
+      dueDate: s.dueDate?.split('T')[0] || '', notes: s.notes || '',
+      recipientContactId: s.recipientContactId || ''
     });
     setFormErrors({}); setSaveError(''); setSlideOpen(true);
   };
@@ -112,6 +126,7 @@ export default function SubmittalsIndex() {
   const validate = () => {
     const errors: Partial<typeof emptyForm> = {};
     if (!form.title.trim()) errors.title = 'Title is required';
+    if (!form.recipientContactId) errors.recipientContactId = 'Recipient is required';
     if (form.revisionNumber === '' || isNaN(Number(form.revisionNumber)) || Number(form.revisionNumber) < 0)
       errors.revisionNumber = 'Revision must be 0 or greater';
     setFormErrors(errors);
@@ -205,17 +220,33 @@ export default function SubmittalsIndex() {
     exportToPDF(body, columns, `SUBMITTAL_LIST_${dateStr}_${activeProject.name.replace(/\s+/g, '_')}`, 'Submittal Register');
   };
 
-  const handleExportDetailPDF = (s: Submittal) => {
-    const columns = ['Field', 'Details'];
-    const body = [
-      ['Submittal Number', s.submittalNumber], ['Revision', String(s.revisionNumber)],
-      ['Title', s.title], ['Description', s.description || 'N/A'], ['Status', s.status],
-      ['Submitted Date', s.submittedDate?.split('T')[0] || 'N/A'],
-      ['Review Duration', `${s.reviewDurationDays || 0} days`],
-      ['Due Date', s.dueDate?.split('T')[0] || 'N/A'], ['Notes', s.notes || 'N/A'],
-      ['Created By', `${s.createdBy?.firstName} ${s.createdBy?.lastName}`]
-    ];
-    exportToPDF(body, columns, `SUBMITTAL_${s.submittalNumber}_R${s.revisionNumber}`, `Submittal Details: ${s.submittalNumber}`);
+  const handleProfessionalExport = async (s: Submittal, includeAttachments: boolean) => {
+    if (!company) return;
+    setIsExporting(true);
+    try {
+      // Fetch attachments for this submittal
+      const atts = await api.get(`/attachments/submittal/${s.id}`);
+      await exportProfessionalPDF({
+        entityType: 'SUBMITTAL',
+        number: s.submittalNumber,
+        revision: s.revisionNumber,
+        title: s.title,
+        date: s.submittedDate ? new Date(s.submittedDate).toLocaleDateString() : 'N/A',
+        project: `${activeProject?.projectNumber} - ${activeProject?.name}`,
+        fromName: `${s.createdBy?.firstName} ${s.createdBy?.lastName}`,
+        toName: `${s.recipientContact?.firstName} ${s.recipientContact?.lastName}`,
+        toCompany: s.recipientContact?.stakeholder?.name,
+        description: s.description || '',
+        notes: s.notes,
+        attachments: atts.data,
+        company: company
+      }, includeAttachments);
+    } catch (err) {
+      console.error('Export failed', err);
+      setError('Professional export failed.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const cols = [
@@ -236,9 +267,11 @@ export default function SubmittalsIndex() {
           <button onClick={handleExportExcel} className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-sm font-medium rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors hover:bg-emerald-100">
             <FileSpreadsheet className="w-4 h-4" /> Excel
           </button>
-          <button onClick={handleExportPDF} className="inline-flex items-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg border border-red-200 dark:border-red-800 transition-colors hover:bg-red-100">
-            <FileDown className="w-4 h-4" /> PDF
-          </button>
+          <ExportDropdown 
+            onExportCover={() => filtered.length > 0 && handleProfessionalExport(filtered[0], false)} 
+            onExportMerged={() => filtered.length > 0 && handleProfessionalExport(filtered[0], true)}
+            isLoading={isExporting}
+          />
           {canMutate && (
             <button onClick={openCreate} className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors ml-2">
               <Plus className="w-4 h-4" /> New Submittal
@@ -345,9 +378,11 @@ export default function SubmittalsIndex() {
                             </button>
                           )}
 
-                          <button onClick={() => handleExportDetailPDF(sub)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors" title="Export PDF">
-                            <Download className="w-4 h-4" />
-                          </button>
+                          <ExportDropdown 
+                            onExportCover={() => handleProfessionalExport(sub, false)} 
+                            onExportMerged={() => handleProfessionalExport(sub, true)}
+                            isLoading={isExporting}
+                          />
 
                           {canMutate && (() => {
                             const isLatest = data.filter(d => d.submittalNumber === sub.submittalNumber).every(d => (d.revisionNumber ?? 0) <= (sub.revisionNumber ?? 0));
@@ -398,6 +433,20 @@ export default function SubmittalsIndex() {
               error={formErrors.submittalNumber} disabled />
             <FormField as="input" label="Revision #" value={form.revisionNumber} readOnly disabled hint="Increment via table" />
           </div>
+
+          <FormField as="select" label="To (Recipient)" required 
+            value={form.recipientContactId} 
+            onChange={e => setForm(f => ({ ...f, recipientContactId: e.target.value }))}
+            error={formErrors.recipientContactId}>
+            <option value="">Select a Recipient...</option>
+            {stakeholders.map(s => (
+              <optgroup key={s.id} label={s.name}>
+                {s.contacts?.map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.firstName} {c.lastName} ({c.position || 'No Position'})</option>
+                ))}
+              </optgroup>
+            ))}
+          </FormField>
 
           <div className="col-span-2">
             <FormField as="input" label="Title" required placeholder="Submittal title..." value={form.title}

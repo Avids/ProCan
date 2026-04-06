@@ -7,7 +7,9 @@ import SlideOver from '../../components/ui/SlideOver';
 import FormField from '../../components/ui/FormField';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import AttachmentPanel from '../../components/AttachmentPanel';
+import ExportDropdown from '../../components/ExportDropdown';
 import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
+import { exportProfessionalPDF } from '../../utils/pdfExportUtils';
 
 const RFI_STATUSES = ['DRAFT', 'SUBMITTED', 'ANSWERED', 'CLOSED'];
 
@@ -16,6 +18,8 @@ interface RFI {
   status: string; dateRaised: string; responseDate: string | null;
   project: { name: string; projectNumber: string } | null;
   raisedBy: { firstName: string; lastName: string } | null;
+  recipientContactId: string | null;
+  recipientContact: { firstName: string; lastName: string; stakeholder: { name: string } } | null;
 }
 
 const statusColor = (s: string) => ({
@@ -25,7 +29,7 @@ const statusColor = (s: string) => ({
   DRAFT: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-400 dark:border-yellow-800',
 } as Record<string, string>)[s] || 'bg-slate-100 text-slate-700 border-slate-200';
 
-const emptyForm = { rfiNumber: '', revisionNumber: '0', title: '', question: '', response: '', status: 'DRAFT', dateRaised: '', responseDate: '' };
+const emptyForm = { rfiNumber: '', revisionNumber: '0', title: '', question: '', response: '', status: 'DRAFT', dateRaised: '', responseDate: '', recipientContactId: '' };
 
 export default function RFIsIndex() {
   const { user } = useAuth();
@@ -50,13 +54,22 @@ export default function RFIsIndex() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [revisingId, setRevisingId] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [stakeholders, setStakeholders] = useState<any[]>([]);
+  const [company, setCompany] = useState<any>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const fetchAll = useCallback(async () => {
     if (!activeProject) return;
     try {
-      const res = await api.get(`/rfis?projectId=${activeProject.id}`);
-      setData(res.data);
-    } catch { setError('Failed to fetch RFIs.'); }
+      const [rfiRes, stalkRes, compRes] = await Promise.all([
+        api.get(`/rfis?projectId=${activeProject.id}`),
+        api.get(`/stakeholders?projectId=${activeProject.id}`),
+        api.get('/settings/company')
+      ]);
+      setData(rfiRes.data);
+      setStakeholders(stalkRes.data);
+      setCompany(compRes.data);
+    } catch { setError('Failed to fetch data.'); }
     finally { setIsLoading(false); }
   }, [activeProject]);
 
@@ -82,7 +95,7 @@ export default function RFIsIndex() {
 
   const openCreate = () => {
     setEditingRFI(null);
-    setForm({ ...emptyForm, dateRaised: new Date().toISOString().split('T')[0] });
+    setForm({ ...emptyForm, dateRaised: new Date().toISOString().split('T')[0], recipientContactId: '' });
     setFormErrors({}); setSaveError(''); setSlideOpen(true);
   };
   const openEdit = (r: RFI) => {
@@ -91,7 +104,8 @@ export default function RFIsIndex() {
       rfiNumber: r.rfiNumber, revisionNumber: String(r.revisionNumber ?? 0),
       title: r.title, question: r.question, response: r.response || '',
       status: r.status, dateRaised: r.dateRaised.split('T')[0],
-      responseDate: r.responseDate?.split('T')[0] || ''
+      responseDate: r.responseDate?.split('T')[0] || '',
+      recipientContactId: r.recipientContactId || ''
     });
     setFormErrors({}); setSaveError(''); setSlideOpen(true);
   };
@@ -100,6 +114,7 @@ export default function RFIsIndex() {
     const errors: Partial<typeof emptyForm> = {};
     if (!form.title.trim()) errors.title = 'Title is required';
     if (!form.question.trim()) errors.question = 'Question is required';
+    if (!form.recipientContactId) errors.recipientContactId = 'Recipient is required';
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -113,6 +128,7 @@ export default function RFIsIndex() {
         ...form,
         projectId: activeProject?.id,
         revisionNumber: Number(form.revisionNumber),
+        recipientContactId: form.recipientContactId || null,
       };
       if (editingRFI) {
         await api.patch(`/rfis/${editingRFI.id}`, payload);
@@ -184,17 +200,33 @@ export default function RFIsIndex() {
     exportToPDF(body, columns, `RFI_LIST_${dateStr}_${activeProject.name.replace(/\s+/g, '_')}`, 'RFI Register');
   };
 
-  const handleExportDetailPDF = (r: RFI) => {
-    const columns = ['Field', 'Details'];
-    const body = [
-      ['RFI Number', r.rfiNumber], ['Revision', String(r.revisionNumber)],
-      ['Project', `${r.project?.projectNumber} - ${r.project?.name}`],
-      ['Title', r.title], ['Status', r.status], ['Date Raised', r.dateRaised.split('T')[0]],
-      ['Days Open', String(getDaysOpen(r))], ['Raised By', `${r.raisedBy?.firstName} ${r.raisedBy?.lastName}`],
-      ['Question', r.question], ['Response', r.response || 'Awaiting response...'],
-      ['Response Date', r.responseDate?.split('T')[0] || 'N/A']
-    ];
-    exportToPDF(body, columns, `RFI_${r.rfiNumber}`, `Request For Information: ${r.rfiNumber}`);
+  const handleProfessionalExport = async (r: RFI, includeAttachments: boolean) => {
+    if (!company) return;
+    setIsExporting(true);
+    try {
+      // Fetch attachments for this RFI
+      const atts = await api.get(`/attachments/rfi/${r.id}`);
+      await exportProfessionalPDF({
+        entityType: 'RFI',
+        number: r.rfiNumber,
+        revision: r.revisionNumber,
+        title: r.title,
+        date: new Date(r.dateRaised).toLocaleDateString(),
+        project: `${activeProject?.projectNumber} - ${activeProject?.name}`,
+        fromName: `${r.raisedBy?.firstName} ${r.raisedBy?.lastName}`,
+        toName: `${r.recipientContact?.firstName} ${r.recipientContact?.lastName}`,
+        toCompany: r.recipientContact?.stakeholder?.name,
+        description: r.question,
+        response: r.response,
+        attachments: atts.data,
+        company: company
+      }, includeAttachments);
+    } catch (err) {
+      console.error('Export failed', err);
+      setError('Professional export failed.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -210,9 +242,11 @@ export default function RFIsIndex() {
           <button onClick={handleExportExcel} className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-sm font-medium rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors hover:bg-emerald-100 dark:hover:bg-emerald-900/40">
             <FileSpreadsheet className="w-4 h-4" /> Excel
           </button>
-          <button onClick={handleExportPDF} className="inline-flex items-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg border border-red-200 dark:border-red-800 transition-colors hover:bg-red-100 dark:hover:bg-red-900/40">
-            <FileDown className="w-4 h-4" /> PDF
-          </button>
+          <ExportDropdown 
+            onExportCover={() => filtered.length > 0 && handleProfessionalExport(filtered[0], false)} 
+            onExportMerged={() => filtered.length > 0 && handleProfessionalExport(filtered[0], true)}
+            isLoading={isExporting}
+          />
           {canMutate && (
             <button onClick={openCreate} className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors ml-2">
               <Plus className="w-4 h-4" /> New RFI
@@ -314,9 +348,11 @@ export default function RFIsIndex() {
                             </button>
                           )}
 
-                          <button onClick={() => handleExportDetailPDF(rfi)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors" title="Export PDF">
-                            <Download className="w-4 h-4" />
-                          </button>
+                          <ExportDropdown 
+                            onExportCover={() => handleProfessionalExport(rfi, false)} 
+                            onExportMerged={() => handleProfessionalExport(rfi, true)}
+                            isLoading={isExporting}
+                          />
 
                           {canMutate && (() => {
                             const isLatest = data.filter(d => d.rfiNumber === rfi.rfiNumber).every(d => (d.revisionNumber ?? 0) <= (rfi.revisionNumber ?? 0));
@@ -361,6 +397,21 @@ export default function RFIsIndex() {
               value={form.rfiNumber} onChange={e => setForm(f => ({ ...f, rfiNumber: e.target.value }))} error={formErrors.rfiNumber} disabled />
             <FormField as="input" label="Revision #" value={form.revisionNumber} readOnly disabled hint="Increment via table" />
           </div>
+
+          <FormField as="select" label="To (Recipient)" required 
+            value={form.recipientContactId} 
+            onChange={e => setForm(f => ({ ...f, recipientContactId: e.target.value }))}
+            error={formErrors.recipientContactId}>
+            <option value="">Select a Recipient...</option>
+            {stakeholders.map(s => (
+              <optgroup key={s.id} label={s.name}>
+                {s.contacts?.map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.firstName} {c.lastName} ({c.position || 'No Position'})</option>
+                ))}
+              </optgroup>
+            ))}
+          </FormField>
+
           <FormField as="input" label="Title" required placeholder="Short descriptive title..."
             value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} error={formErrors.title} />
           <FormField as="select" label="Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>

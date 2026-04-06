@@ -9,7 +9,10 @@ router.use(authenticate);
 const include = {
   project: { select: { name: true, projectNumber: true } },
   raisedBy: { select: { firstName: true, lastName: true } },
-  respondedBy: { select: { firstName: true, lastName: true } }
+  respondedBy: { select: { firstName: true, lastName: true } },
+  recipientContact: { 
+    include: { stakeholder: { select: { name: true } } }
+  }
 };
 
 // LIST
@@ -33,7 +36,7 @@ router.get('/:id', async (req, res, next) => {
 // CREATE
 router.post('/', async (req: any, res, next) => {
   try {
-    const { projectId, rfiNumber, title, question, status, dateRaised, revisionNumber } = req.body;
+    const { projectId, rfiNumber, title, question, status, dateRaised, revisionNumber, recipientContactId } = req.body;
     if (!projectId || !question || !title)
       return res.status(400).json({ message: 'projectId, title, and question are required' });
 
@@ -59,6 +62,7 @@ router.post('/', async (req: any, res, next) => {
         revisionNumber: revisionNumber != null ? Number(revisionNumber) : 0,
         raisedById: req.user.id,
         dateRaised: dateRaised ? new Date(dateRaised) : new Date(),
+        recipientContactId
       },
       include
     });
@@ -116,6 +120,7 @@ router.post('/:id/revise', async (req: any, res, next) => {
         status: 'DRAFT',
         raisedById: req.user.id,
         dateRaised: new Date(),
+        recipientContactId: source.recipientContactId
       },
       include
     });

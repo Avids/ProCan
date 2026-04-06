@@ -8,7 +8,10 @@ router.use(authenticate);
 
 const include = {
   project: { select: { name: true, projectNumber: true } },
-  createdBy: { select: { firstName: true, lastName: true } }
+  createdBy: { select: { firstName: true, lastName: true } },
+  recipientContact: { 
+    include: { stakeholder: { select: { name: true } } }
+  }
 };
 
 // LIST
@@ -31,7 +34,7 @@ router.get('/:id', async (req, res, next) => {
 // CREATE
 router.post('/', async (req: any, res, next) => {
   try {
-    const { projectId, submittalNumber, title, description, status, revisionNumber, submittedDate, dueDate, reviewDurationDays, notes } = req.body;
+    const { projectId, submittalNumber, title, description, status, revisionNumber, submittedDate, dueDate, reviewDurationDays, notes, recipientContactId } = req.body;
     if (!projectId || !title)
       return res.status(400).json({ message: 'projectId and title are required' });
 
@@ -59,7 +62,8 @@ router.post('/', async (req: any, res, next) => {
         submittedDate: submittedDate ? new Date(submittedDate) : undefined,
         reviewDurationDays: reviewDurationDays != null ? Number(reviewDurationDays) : undefined,
         dueDate: dueDate ? new Date(dueDate) : undefined,
-        notes
+        notes,
+        recipientContactId
       },
       include
     });
@@ -116,6 +120,7 @@ router.post('/:id/revise', async (req: any, res, next) => {
         createdById: req.user.id,
         reviewDurationDays: source.reviewDurationDays ?? undefined,
         dueDate: source.dueDate ?? undefined,
+        recipientContactId: source.recipientContactId
       },
       include
     });

@@ -321,12 +321,14 @@ model Submittal {
   createdById        String
   parentSubmittalId  String?         // For revision tracking (self-reference)
   metadata           Json?           // For future expandability
+  recipientContactId String?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
   // Relationships
   project            Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy          Employee        @relation("CreatedSubmittals", fields: [createdById], references: [id])
+  recipientContact   StakeholderContact? @relation("SubmittalRecipient", fields: [recipientContactId], references: [id])
   parentSubmittal    Submittal?      @relation("SubmittalRevisions", fields: [parentSubmittalId], references: [id])
   revisions          Submittal[]     @relation("SubmittalRevisions")
 
@@ -356,6 +358,7 @@ model RFI {
   respondedById    String?
   parentRfiId      String?
   metadata         Json?       // For future expandability
+  recipientContactId String?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -363,6 +366,7 @@ model RFI {
   project          Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   raisedBy         Employee    @relation("RaisedRFIs", fields: [raisedById], references: [id])
   respondedBy      Employee?   @relation("RespondedRFIs", fields: [respondedById], references: [id])
+  recipientContact StakeholderContact? @relation("RFIRecipient", fields: [recipientContactId], references: [id])
   parentRfi        RFI?        @relation("RFIRevisions", fields: [parentRfiId], references: [id])
   revisions        RFI[]       @relation("RFIRevisions")
 
@@ -521,6 +525,10 @@ model StakeholderContact {
   isPrimary     Boolean     @default(false)
   createdAt     DateTime    @default(now())
 
+  // Back-relations
+  receivedSubmittals Submittal[] @relation("SubmittalRecipient")
+  receivedRFIs       RFI[]       @relation("RFIRecipient")
+
   @@map("stakeholder_contacts")
 }
 
@@ -538,6 +546,7 @@ model CompanySettings {
   phone      String?
   email      String?
   website    String?
+  logoUrl    String?
   updatedAt  DateTime @updatedAt
 
   @@map("company_settings")
