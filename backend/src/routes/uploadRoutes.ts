@@ -26,8 +26,8 @@ router.post('/', upload.single('file'), async (req: any, res) => {
   }
 
   try {
-    const s3Url = await uploadToS3(req.file);
-    return res.json({ url: s3Url, filename: req.file.originalname });
+    const { url, key } = await uploadToS3(req.file);
+    return res.json({ url, key, filename: req.file.originalname });
   } catch (error: any) {
     console.error('S3 Upload Error:', error);
     return res.status(500).json({ message: 'Failed to upload to S3' });

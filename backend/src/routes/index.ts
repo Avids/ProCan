@@ -11,6 +11,7 @@ import dashboardRoutes from './dashboardRoutes';
 import uploadRoutes from './uploadRoutes';
 import stakeholderRoutes from './stakeholderRoutes';
 import settingsRoutes from './settingsRoutes';
+import attachmentRoutes from './attachmentRoutes';
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use('/rfis', rfiRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/stakeholders', stakeholderRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/attachments', attachmentRoutes);
 
 export default router;

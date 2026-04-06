@@ -98,6 +98,13 @@ enum RFIStatus {
   @@map("rfi_status")
 }
 
+enum AttachmentKind {
+  FILE
+  LINK
+
+  @@map("attachment_kind")
+}
+
 enum EmployeePosition {
   PROJECT_MANAGER
   PROJECT_ENGINEER
@@ -310,8 +317,6 @@ model Submittal {
   reviewDurationDays Int?
   dueDate            DateTime?
   approvedDate       DateTime?
-  attachment1Url     String?
-  attachment2Url     String?
   notes              String?
   createdById        String
   parentSubmittalId  String?         // For revision tracking (self-reference)
@@ -347,8 +352,6 @@ model RFI {
   response         String?
   responseDate     DateTime?
   status           RFIStatus   @default(DRAFT)
-  attachment1Url   String?
-  attachment2Url   String?
   raisedById       String
   respondedById    String?
   parentRfiId      String?
@@ -393,8 +396,9 @@ model Employee {
   createdSubmittals  Submittal[]      @relation("CreatedSubmittals")
   raisedRFIs         RFI[]            @relation("RaisedRFIs")
   respondedRFIs      RFI[]            @relation("RespondedRFIs")
-  assignedProjects   ProjectAssignment[] @relation("AssignedProjects") // Projects they assigned
+  assignedProjects   ProjectAssignment[] @relation("AssignedProjects")
   activityLogs       ActivityLog[]
+  uploadedAttachments Attachment[]    @relation("UploadedAttachments")
 
   @@index([email])
   @@index([role])
@@ -453,6 +457,29 @@ model ActivityLog {
   @@index([entityId])
   @@index([createdAt])
   @@map("activity_logs")
+}
+
+// ============================================
+// TABLE: Attachments (polymorphic — files + links)
+// ============================================
+
+model Attachment {
+  id           String         @id @default(uuid())
+  entityType   String         // "submittal" | "rfi" | future types
+  entityId     String
+  kind         AttachmentKind
+  label        String?
+  url          String
+  filename     String?        // original filename (FILE only)
+  fileSize     Int?           // bytes (FILE only)
+  mimeType     String?        // MIME type (FILE only)
+  s3Key        String?        // S3 object key for deletion (FILE only)
+  uploadedById String
+  uploadedBy   Employee       @relation("UploadedAttachments", fields: [uploadedById], references: [id])
+  createdAt    DateTime       @default(now())
+
+  @@index([entityType, entityId])
+  @@map("attachments")
 }
 
 // ============================================

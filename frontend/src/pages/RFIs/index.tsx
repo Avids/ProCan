@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import api, { getAssetUrl } from '../../lib/api';
-import { MessageSquare, Search, ArrowUpDown, AlertCircle, Filter, Timer, MessageCircle, Plus, Pencil, Trash2, FileSpreadsheet, FileDown, Download, Paperclip, History as HistoryIcon } from 'lucide-react';
+import api from '../../lib/api';
+import { MessageSquare, Search, ArrowUpDown, AlertCircle, Filter, Timer, MessageCircle, Plus, Pencil, Trash2, FileSpreadsheet, FileDown, Download, Paperclip, History as HistoryIcon, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useProject } from '../../contexts/ProjectContext';
 import SlideOver from '../../components/ui/SlideOver';
 import FormField from '../../components/ui/FormField';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import AttachmentPanel from '../../components/AttachmentPanel';
 import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
 
 const RFI_STATUSES = ['DRAFT', 'SUBMITTED', 'ANSWERED', 'CLOSED'];
@@ -13,7 +14,6 @@ const RFI_STATUSES = ['DRAFT', 'SUBMITTED', 'ANSWERED', 'CLOSED'];
 interface RFI {
   id: string; rfiNumber: string; revisionNumber: number; title: string; question: string; response: string | null;
   status: string; dateRaised: string; responseDate: string | null;
-  attachment1Url: string | null; attachment2Url: string | null;
   project: { name: string; projectNumber: string } | null;
   raisedBy: { firstName: string; lastName: string } | null;
 }
@@ -41,7 +41,6 @@ export default function RFIsIndex() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const [slideOpen, setSlideOpen] = useState(false);
-  const [fileInputKey, setFileInputKey] = useState(0);
   const [editingRFI, setEditingRFI] = useState<RFI | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [formErrors, setFormErrors] = useState<Partial<typeof emptyForm>>({});
@@ -50,8 +49,7 @@ export default function RFIsIndex() {
   const [deleteTarget, setDeleteTarget] = useState<RFI | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [revisingId, setRevisingId] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const fetchAll = useCallback(async () => {
     if (!activeProject) return;
@@ -89,38 +87,13 @@ export default function RFIsIndex() {
   };
   const openEdit = (r: RFI) => {
     setEditingRFI(r);
-    setForm({ 
-      rfiNumber: r.rfiNumber, revisionNumber: String(r.revisionNumber ?? 0), 
-      title: r.title, question: r.question, response: r.response || '', 
-      status: r.status, dateRaised: r.dateRaised.split('T')[0], 
-      responseDate: r.responseDate?.split('T')[0] || '' 
+    setForm({
+      rfiNumber: r.rfiNumber, revisionNumber: String(r.revisionNumber ?? 0),
+      title: r.title, question: r.question, response: r.response || '',
+      status: r.status, dateRaised: r.dateRaised.split('T')[0],
+      responseDate: r.responseDate?.split('T')[0] || ''
     });
     setFormErrors({}); setSaveError(''); setSlideOpen(true);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) setSelectedFile(e.target.files[0]);
-  };
-
-  const uploadFile = async () => {
-    if (!selectedFile) return null;
-    setUploading(true);
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-
-    try {
-      const res = await api.post('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      return res.data.url;
-    } catch (err: any) {
-      console.error('File Upload Error:', err);
-      const msg = err.response?.data?.message || err.message || 'Failed to upload file.';
-      setSaveError(`Upload failed: ${msg}`);
-      return null;
-    } finally {
-      setUploading(false);
-    }
   };
 
   const validate = () => {
@@ -136,22 +109,19 @@ export default function RFIsIndex() {
     if (!validate()) return;
     setIsSaving(true); setSaveError('');
     try {
-      let attachment1Url = editingRFI?.attachment1Url || null;
-      if (selectedFile) {
-        const uploadedUrl = await uploadFile();
-        if (uploadedUrl) attachment1Url = uploadedUrl;
-        else { setIsSaving(false); return; }
-      }
-
-      const payload = { 
-        ...form, 
+      const payload = {
+        ...form,
         projectId: activeProject?.id,
         revisionNumber: Number(form.revisionNumber),
-        attachment1Url 
       };
-      if (editingRFI) await api.patch(`/rfis/${editingRFI.id}`, payload);
-      else await api.post('/rfis', payload);
-      setSlideOpen(false); setSelectedFile(null); await fetchAll();
+      if (editingRFI) {
+        await api.patch(`/rfis/${editingRFI.id}`, payload);
+        setSlideOpen(false);
+      } else {
+        const res = await api.post('/rfis', payload);
+        setEditingRFI(res.data);
+      }
+      await fetchAll();
     } catch (err: any) { setSaveError(err.response?.data?.message || 'Failed to save RFI.'); }
     finally { setIsSaving(false); }
   };
@@ -178,7 +148,12 @@ export default function RFIsIndex() {
     else { setSortField(field); setSortDir('asc'); }
   };
 
-  const uniqueProjects = Array.from(new Set(data.map(d => d.project?.name).filter(Boolean)));
+  const toggleRow = (id: string) => setExpandedRows(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
   const uniqueStatuses = Array.from(new Set(data.map(d => d.status)));
 
   const filtered = data
@@ -194,48 +169,29 @@ export default function RFIsIndex() {
 
   const handleExportExcel = () => {
     const exportData = filtered.map(r => ({
-      Number: r.rfiNumber,
-      Project: r.project?.name || 'N/A',
-      Question: r.question,
-      Status: r.status,
-      'Date Raised': r.dateRaised.split('T')[0],
-      'Days Open': getDaysOpen(r),
-      'Raised By': `${r.raisedBy?.firstName} ${r.raisedBy?.lastName}`,
-      Response: r.response || 'Pending'
+      Number: r.rfiNumber, Project: r.project?.name || 'N/A', Question: r.question, Status: r.status,
+      'Date Raised': r.dateRaised.split('T')[0], 'Days Open': getDaysOpen(r),
+      'Raised By': `${r.raisedBy?.firstName} ${r.raisedBy?.lastName}`, Response: r.response || 'Pending'
     }));
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
-    exportToExcel(exportData, `RFI_LIST_${dateStr}_${projectName}`, 'RFIs');
+    exportToExcel(exportData, `RFI_LIST_${dateStr}_${activeProject.name.replace(/\s+/g, '_')}`, 'RFIs');
   };
 
   const handleExportPDF = () => {
     const columns = ['Number', 'Rev', 'Project', 'Title', 'Status', 'Days Open'];
-    const body = filtered.map(r => [
-      r.rfiNumber,
-      r.revisionNumber,
-      r.project?.projectNumber || 'N/A',
-      r.title,
-      r.status,
-      getDaysOpen(r)
-    ]);
+    const body = filtered.map(r => [r.rfiNumber, r.revisionNumber, r.project?.projectNumber || 'N/A', r.title, r.status, getDaysOpen(r)]);
     const dateStr = new Date().toISOString().split('T')[0];
-    const projectName = activeProject ? activeProject.name.replace(/\s+/g, '_') : 'All_Projects';
-    exportToPDF(body, columns, `RFI_LIST_${dateStr}_${projectName}`, 'RFI Register');
+    exportToPDF(body, columns, `RFI_LIST_${dateStr}_${activeProject.name.replace(/\s+/g, '_')}`, 'RFI Register');
   };
 
   const handleExportDetailPDF = (r: RFI) => {
     const columns = ['Field', 'Details'];
     const body = [
-      ['RFI Number', r.rfiNumber],
-      ['Revision', String(r.revisionNumber)],
+      ['RFI Number', r.rfiNumber], ['Revision', String(r.revisionNumber)],
       ['Project', `${r.project?.projectNumber} - ${r.project?.name}`],
-      ['Title', r.title],
-      ['Status', r.status],
-      ['Date Raised', r.dateRaised.split('T')[0]],
-      ['Days Open', String(getDaysOpen(r))],
-      ['Raised By', `${r.raisedBy?.firstName} ${r.raisedBy?.lastName}`],
-      ['Question', r.question],
-      ['Response', r.response || 'Awaiting response...'],
+      ['Title', r.title], ['Status', r.status], ['Date Raised', r.dateRaised.split('T')[0]],
+      ['Days Open', String(getDaysOpen(r))], ['Raised By', `${r.raisedBy?.firstName} ${r.raisedBy?.lastName}`],
+      ['Question', r.question], ['Response', r.response || 'Awaiting response...'],
       ['Response Date', r.responseDate?.split('T')[0] || 'N/A']
     ];
     exportToPDF(body, columns, `RFI_${r.rfiNumber}`, `Request For Information: ${r.rfiNumber}`);
@@ -271,14 +227,12 @@ export default function RFIsIndex() {
           <input type="text" placeholder="Search Question or RFI Number..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-rose-500 dark:text-white" />
         </div>
-        <div className="flex gap-4">
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-rose-500 dark:text-white cursor-pointer w-40">
-              <option value="ALL">All Statuses</option>
-              {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
+        <div className="relative">
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-rose-500 dark:text-white cursor-pointer w-40">
+            <option value="ALL">All Statuses</option>
+            {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
       </div>
 
@@ -294,10 +248,10 @@ export default function RFIsIndex() {
                     <div className="flex items-center gap-2">{c.l} <ArrowUpDown className={`w-3 h-3 ${sortField === c.f ? 'text-rose-500' : 'text-slate-300 opacity-0 group-hover:opacity-100'}`} /></div>
                   </th>
                 ))}
-                {canMutate && <th className="px-6 py-4 text-right">Actions</th>}
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+            <tbody>
               {isLoading ? (
                 <tr><td colSpan={6} className="px-6 py-12 text-center">
                   <div className="animate-spin h-8 w-8 border-b-2 border-rose-600 rounded-full mx-auto" />
@@ -312,80 +266,85 @@ export default function RFIsIndex() {
               ) : filtered.map(rfi => {
                 const overdue = isOverdue(rfi);
                 const days = getDaysOpen(rfi);
+                const isExpanded = expandedRows.has(rfi.id);
                 return (
-                  <tr key={rfi.id} className={`transition-colors group ${overdue ? 'bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-900/50'}`}>
-                    <td className="px-6 py-4">
-                      <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        {rfi.rfiNumber}
-                        {rfi.attachment1Url && <Paperclip className="w-3.5 h-3.5 text-rose-500 ml-1" />}
-                      </div>
-                      <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{rfi.title}</div>
-                      <div className="text-[10px] text-slate-500 italic truncate max-w-[200px] mt-0.5">"{truncate(rfi.question, 40)}"</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-1 rounded border bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700`}>
-                        Rev {rfi.revisionNumber ?? 0}
-                      </span>
-                      {rfi.raisedBy && <div className="text-xs text-slate-500 mt-1">{rfi.raisedBy.firstName} {rfi.raisedBy.lastName}</div>}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-widest rounded-full border ${statusColor(rfi.status)}`}>{rfi.status}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {['CLOSED', 'ANSWERED'].includes(rfi.status)
-                        ? <div className="text-sm text-slate-400">{days} Days Total</div>
-                        : <div className={`flex items-center gap-2 font-bold ${overdue ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>
-                          <Timer className={`w-4 h-4 ${overdue ? 'animate-pulse text-red-500' : 'text-slate-400'}`} />
-                          {days} Days {overdue && <span className="text-[10px] uppercase bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded text-red-700 dark:text-red-300">DELAYED</span>}
-                        </div>}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500">
-                      <div className="font-medium text-slate-900 dark:text-slate-300 mb-1">Raised: {new Date(rfi.dateRaised).toLocaleDateString()}</div>
-                      <div>{rfi.responseDate ? `Resolved: ${new Date(rfi.responseDate).toLocaleDateString()}` : 'Awaiting Response...'}</div>
-                    </td>
-                    {canMutate && (
+                  <React.Fragment key={rfi.id}>
+                    <tr className={`transition-colors group border-b border-slate-100 dark:border-slate-800 ${overdue ? 'bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-900/50'}`}>
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-slate-900 dark:text-white">{rfi.rfiNumber}</div>
+                        <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{rfi.title}</div>
+                        <div className="text-[10px] text-slate-500 italic truncate max-w-[200px] mt-0.5">"{truncate(rfi.question, 40)}"</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-1 rounded border bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+                          Rev {rfi.revisionNumber ?? 0}
+                        </span>
+                        {rfi.raisedBy && <div className="text-xs text-slate-500 mt-1">{rfi.raisedBy.firstName} {rfi.raisedBy.lastName}</div>}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-widest rounded-full border ${statusColor(rfi.status)}`}>{rfi.status}</span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {['CLOSED', 'ANSWERED'].includes(rfi.status)
+                          ? <div className="text-sm text-slate-400">{days} Days Total</div>
+                          : <div className={`flex items-center gap-2 font-bold ${overdue ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                            <Timer className={`w-4 h-4 ${overdue ? 'animate-pulse text-red-500' : 'text-slate-400'}`} />
+                            {days} Days {overdue && <span className="text-[10px] uppercase bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded text-red-700 dark:text-red-300">DELAYED</span>}
+                          </div>}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500">
+                        <div className="font-medium text-slate-900 dark:text-slate-300 mb-1">Raised: {new Date(rfi.dateRaised).toLocaleDateString()}</div>
+                        <div>{rfi.responseDate ? `Resolved: ${new Date(rfi.responseDate).toLocaleDateString()}` : 'Awaiting Response...'}</div>
+                      </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleRevise(rfi)}
-                            disabled={revisingId === rfi.id}
-                            title={`Create Rev ${rfi.revisionNumber + 1}`}
-                            className="inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800 rounded-lg transition-colors disabled:opacity-50"
-                          >
-                            {revisingId === rfi.id
-                              ? <span className="w-3 h-3 border-2 border-rose-400/40 border-t-rose-600 rounded-full animate-spin" />
-                              : <HistoryIcon className="w-3.5 h-3.5" />
-                            }
-                            Rev {(rfi.revisionNumber ?? 0) + 1}
+                          {/* Attachment toggle */}
+                          <button onClick={() => toggleRow(rfi.id)}
+                            className={`p-1.5 rounded-lg transition-colors ${isExpanded ? 'text-rose-600 bg-rose-50 dark:bg-rose-900/30' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30'}`}
+                            title="Attachments & Links">
+                            <Paperclip className="w-4 h-4" />
                           </button>
 
-                          {/* Attachment Link (Paperclip) */}
-                          {rfi.attachment1Url && (
-                            <a href={getAssetUrl(rfi.attachment1Url)} target="_blank" rel="noreferrer" className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="View Attachment">
-                              <Paperclip className="w-4 h-4" />
-                            </a>
-                          )}
-                          {rfi.attachment2Url && (
-                            <a href={getAssetUrl(rfi.attachment2Url)} target="_blank" rel="noreferrer" className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="View Attachment">
-                              <Paperclip className="w-4 h-4" />
-                            </a>
+                          {canMutate && (
+                            <button onClick={() => handleRevise(rfi)} disabled={revisingId === rfi.id}
+                              title={`Create Rev ${rfi.revisionNumber + 1}`}
+                              className="inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800 rounded-lg transition-colors disabled:opacity-50">
+                              {revisingId === rfi.id ? <span className="w-3 h-3 border-2 border-rose-400/40 border-t-rose-600 rounded-full animate-spin" /> : <HistoryIcon className="w-3.5 h-3.5" />}
+                              Rev {(rfi.revisionNumber ?? 0) + 1}
+                            </button>
                           )}
 
-                          <button onClick={() => handleExportDetailPDF(rfi)} className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors" title="Export PDF">
+                          <button onClick={() => handleExportDetailPDF(rfi)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors" title="Export PDF">
                             <Download className="w-4 h-4" />
                           </button>
-                          {/* Edit (only latest rev) */}
-                          {(() => {
-                            const isLatest = data
-                              .filter(d => d.rfiNumber === rfi.rfiNumber)
-                              .every(d => (d.revisionNumber ?? 0) <= (rfi.revisionNumber ?? 0));
-                            return isLatest && <button onClick={() => openEdit(rfi)} className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="Edit"><Pencil className="w-4 h-4" /></button>;
+
+                          {canMutate && (() => {
+                            const isLatest = data.filter(d => d.rfiNumber === rfi.rfiNumber).every(d => (d.revisionNumber ?? 0) <= (rfi.revisionNumber ?? 0));
+                            return isLatest && <button onClick={() => openEdit(rfi)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="Edit"><Pencil className="w-4 h-4" /></button>;
                           })()}
-                          <button onClick={() => setDeleteTarget(rfi)} className="p-1.5 text-slate-600 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
+
+                          {canMutate && (
+                            <button onClick={() => setDeleteTarget(rfi)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors" title="Delete">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          <button onClick={() => toggleRow(rfi.id)} className="p-1.5 text-slate-300 hover:text-slate-500 transition-colors">
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </button>
                         </div>
                       </td>
+                    </tr>
+
+                    {/* ── Attachment Panel Row ── */}
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={6} className="bg-slate-50 dark:bg-slate-900/50 px-8 py-4 border-b border-slate-100 dark:border-slate-800">
+                          <AttachmentPanel entityType="rfi" entityId={rfi.id} canMutate={canMutate} />
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -393,7 +352,7 @@ export default function RFIsIndex() {
         </div>
       </div>
 
-      <SlideOver isOpen={slideOpen} onClose={() => { setSlideOpen(false); setSelectedFile(null); }}
+      <SlideOver isOpen={slideOpen} onClose={() => setSlideOpen(false)}
         title={editingRFI ? 'Edit RFI' : 'Raise New RFI'}
         subtitle={editingRFI ? `RFI ${editingRFI.rfiNumber}` : 'Submit a request for information'}>
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -422,27 +381,17 @@ export default function RFIsIndex() {
             )}
           </div>
 
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Attachment (PDF, Image, etc.)</label>
-            <div className="flex items-center gap-3">
-              <input key={fileInputKey} type="file" onChange={handleFileChange} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100 dark:file:bg-rose-900/40 dark:file:text-rose-400" />
-              {uploading && <span className="w-4 h-4 border-2 border-rose-600/30 border-t-rose-600 rounded-full animate-spin" />}
-              {selectedFile && (
-                <button type="button" onClick={() => { setSelectedFile(null); setFileInputKey(k => k + 1); }} className="text-[11px] font-bold text-rose-600 hover:underline">Remove</button>
-              )}
+          {/* Attachments — only shown when editing an existing RFI */}
+          {editingRFI && (
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
+              <AttachmentPanel entityType="rfi" entityId={editingRFI.id} canMutate={canMutate} />
             </div>
-            {editingRFI?.attachment1Url && !selectedFile && (
-              <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                <Download className="w-3 h-3" /> Current: <a href={getAssetUrl(editingRFI.attachment1Url)} target="_blank" rel="noreferrer" className="underline font-medium">View File</a>
-              </p>
-            )}
-            {selectedFile && <p className="text-xs text-emerald-600 font-medium italic">New file selected: {selectedFile.name}</p>}
-          </div>
+          )}
 
           {saveError && <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 text-sm rounded-lg border border-red-200 flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" />{saveError}</div>}
 
           <div className="flex gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
-            <button type="button" onClick={() => { setSlideOpen(false); setSelectedFile(null); setSaveError(''); setIsSaving(false); }} className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancel</button>
+            <button type="button" onClick={() => { setSlideOpen(false); setSaveError(''); }} className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancel</button>
             <button type="submit" disabled={isSaving} className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2">
               {isSaving && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
               {editingRFI ? 'Save Changes' : 'Raise RFI'}

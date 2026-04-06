@@ -116,8 +116,6 @@ router.post('/:id/revise', async (req: any, res, next) => {
         createdById: req.user.id,
         reviewDurationDays: source.reviewDurationDays ?? undefined,
         dueDate: source.dueDate ?? undefined,
-        attachment1Url: undefined,
-        attachment2Url: undefined,
       },
       include
     });

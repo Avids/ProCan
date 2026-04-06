@@ -77,10 +77,9 @@ router.patch('/:id', async (req: any, res, next) => {
     if (!before) return res.status(404).json({ message: 'RFI not found' });
 
     console.log(`PATCH RFI ${req.params.id}:`, req.body);
-    const { responseDate, dateRaised, projectId, raisedById, respondedById: _respondedById, revisionNumber: _rev, attachment1Url, attachment2Url, ...rest } = req.body;
+    const { responseDate, dateRaised, projectId, raisedById, respondedById: _respondedById, revisionNumber: _rev, ...rest } = req.body;
     const revisionNumber = _rev != null ? Number(_rev) : undefined;
 
-    // If adding a response, set respondedById to the current user
     const respondedByUpdate = rest.response ? { respondedById: req.user.id } : {};
 
     const updated = await prisma.rFI.update({
@@ -91,8 +90,6 @@ router.patch('/:id', async (req: any, res, next) => {
         ...(revisionNumber !== undefined ? { revisionNumber } : {}),
         ...(responseDate ? { responseDate: new Date(responseDate) } : {}),
         ...(dateRaised ? { dateRaised: new Date(dateRaised) } : {}),
-        attachment1Url: attachment1Url !== undefined ? attachment1Url : undefined,
-        attachment2Url: attachment2Url !== undefined ? attachment2Url : undefined
       },
       include
     });
@@ -119,8 +116,6 @@ router.post('/:id/revise', async (req: any, res, next) => {
         status: 'DRAFT',
         raisedById: req.user.id,
         dateRaised: new Date(),
-        attachment1Url: undefined,
-        attachment2Url: undefined,
       },
       include
     });
