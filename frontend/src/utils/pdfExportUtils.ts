@@ -37,7 +37,7 @@ export const exportProfessionalPDF = async (data: ExportData, includeAttachments
 
   // 1. Header (Logo & Company Info)
   let currentY = 15;
-  if (data.company.logoUrl) {
+  if (data.company.logoUrl && data.company.logoUrl.trim() !== '') {
     try {
       // Note: In a real app, you'd want to proxy this or ensure CORS. 
       // For now, we'll try to add it. If it fails, we skip.
@@ -169,8 +169,8 @@ export const exportProfessionalPDF = async (data: ExportData, includeAttachments
     const pdfBytes = doc.output('arraybuffer');
     const resultPdf = await PDFDocument.create();
     const coverDoc = await PDFDocument.load(pdfBytes);
-    const [coverPage] = await resultPdf.copyPages(coverDoc, [0]);
-    resultPdf.addPage(coverPage);
+    const pages = await resultPdf.copyPages(coverDoc, coverDoc.getPageIndices());
+    pages.forEach(p => resultPdf.addPage(p));
 
     // Filter for PDF attachments only
     const pdfAttachments = data.attachments.filter(a => a.kind === 'FILE' && a.url.toLowerCase().endsWith('.pdf'));

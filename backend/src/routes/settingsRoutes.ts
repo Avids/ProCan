@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { upload } from '../middleware/upload';
-import { uploadToS3, deleteFromS3 } from '../utils/s3';
+import { uploadToS3, deleteFromS3, getPresignedUrl } from '../utils/s3';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -35,6 +35,21 @@ router.get('/company', async (_req: Request, res: Response) => {
       update: {},
       create: { id: 'singleton', name: 'My Company', updatedAt: new Date() },
     });
+    
+    // Better: extract key if it's an S3 URL
+    if (settings.logoUrl) {
+      const bucket = process.env.AWS_S3_BUCKET;
+      if (bucket && settings.logoUrl.includes(bucket)) {
+        const key = settings.logoUrl.split('.amazonaws.com/')[1];
+        if (key) {
+          try {
+            const presigned = await getPresignedUrl(key);
+            settings.logoUrl = presigned;
+          } catch (e) { console.error('Failed to presign logo', e); }
+        }
+      }
+    }
+
     res.json(settings);
   } catch (err) {
     console.error(err);

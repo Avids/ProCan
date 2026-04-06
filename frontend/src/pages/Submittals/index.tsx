@@ -225,7 +225,7 @@ export default function SubmittalsIndex() {
     setIsExporting(true);
     try {
       // Fetch attachments for this submittal
-      const atts = await api.get(`/attachments/submittal/${s.id}`);
+      const atts = await api.get('/attachments', { params: { entityType: 'submittal', entityId: s.id } });
       await exportProfessionalPDF({
         entityType: 'SUBMITTAL',
         number: s.submittalNumber,
@@ -267,11 +267,9 @@ export default function SubmittalsIndex() {
           <button onClick={handleExportExcel} className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-sm font-medium rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors hover:bg-emerald-100">
             <FileSpreadsheet className="w-4 h-4" /> Excel
           </button>
-          <ExportDropdown 
-            onExportCover={() => filtered.length > 0 && handleProfessionalExport(filtered[0], false)} 
-            onExportMerged={() => filtered.length > 0 && handleProfessionalExport(filtered[0], true)}
-            isLoading={isExporting}
-          />
+          <button onClick={handleExportPDF} className="inline-flex items-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg border border-red-200 dark:border-red-800 transition-colors hover:bg-red-100">
+            <FileDown className="w-4 h-4" /> PDF
+          </button>
           {canMutate && (
             <button onClick={openCreate} className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors ml-2">
               <Plus className="w-4 h-4" /> New Submittal
