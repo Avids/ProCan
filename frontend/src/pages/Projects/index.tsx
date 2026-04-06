@@ -14,7 +14,10 @@ interface ProjectListItem {
   description: string | null; totalValue: number | null; durationMonths: number | null;
   laborHours: number | null; laborValue: number | null; materialCost: number | null;
   status: string; startDate: string | null; finishDate: string | null;
-  metadata?: { ownerName?: string; generalContractorName?: string; architectName?: string; engineerName?: string } | null;
+  owner?: { id: string; name: string } | null;
+  gc?: { id: string; name: string } | null;
+  architect?: { id: string; name: string } | null;
+  engineer?: { id: string; name: string } | null;
   _count?: { projectAssignments: number; materials: number; };
   projectAssignments?: { employeeId: string; positionInProject: string }[];
 }
@@ -29,7 +32,7 @@ const statusColor = (s: string) => ({
 
 const emptyForm = {
   projectNumber: '', name: '', location: '', description: '',
-  generalContractorName: '', ownerName: '', architectName: '', engineerName: '',
+  ownerId: '', gcId: '', architectId: '', engineerId: '',
   totalValue: '', durationMonths: '', laborHours: '', laborValue: '', materialCost: '', 
   managerId: '', startDate: '', finishDate: '', status: 'PLANNING'
 };
@@ -42,6 +45,7 @@ export default function ProjectsIndex() {
 
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [employees, setEmployees] = useState<{ id: string; firstName: string; lastName: string }[]>([]);
+  const [stakeholders, setStakeholders] = useState<{ id: string; name: string; type: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -69,14 +73,14 @@ export default function ProjectsIndex() {
 
   const fetchProjects = useCallback(async () => {
     try {
-      const [projRes, empRes] = await Promise.all([
+      const [projRes, empRes, stakeholderRes] = await Promise.all([
         api.get('/projects'),
-        api.get('/employees')
+        api.get('/employees'),
+        api.get('/stakeholders'),
       ]);
-      // Assuming get('/projects') can be modified to return basic assignment info, or we just do it via fetching the specific project. 
-      // Actually backend /projects endpoint doesn't return projectAssignments by default we just fetch employees for the dropdown.
       setProjects(projRes.data);
       setEmployees(empRes.data.filter((e: any) => e.isActive));
+      setStakeholders(stakeholderRes.data);
     } catch { setError('Failed to fetch projects.'); }
     finally { setIsLoading(false); }
   }, []);
@@ -91,28 +95,25 @@ export default function ProjectsIndex() {
   const openEdit = async (e: React.MouseEvent, project: ProjectListItem) => {
     e.stopPropagation();
     setIsLoading(true);
-    let managerId = '';
     let fullProject: any = project;
     try {
-      // Fetch full project details to get assignments and all fields
       const res = await api.get(`/projects/${project.id}`);
       fullProject = res.data;
-      const pmAssignment = fullProject.projectAssignments?.find((a: any) => a.positionInProject === 'Project Manager');
-      if (pmAssignment) managerId = pmAssignment.employeeId;
     } catch (err) { console.error('Failed to load full project details', err); }
     setIsLoading(false);
 
     setEditingProject(project);
-    const meta = (fullProject.metadata as any) || {};
+    const pmAssignment = fullProject.projectAssignments?.find((a: any) => a.positionInProject === 'Project Manager');
+    const managerId = pmAssignment ? pmAssignment.employeeId : '';
     setForm({
       projectNumber: fullProject.projectNumber,
       name: fullProject.name || '',
       location: fullProject.location || '',
       description: fullProject.description || '',
-      generalContractorName: meta.generalContractorName || '',
-      ownerName: meta.ownerName || '',
-      architectName: meta.architectName || '',
-      engineerName: meta.engineerName || '',
+      ownerId:     fullProject.owner?.id     || fullProject.ownerId     || '',
+      gcId:        fullProject.gc?.id        || fullProject.gcId        || '',
+      architectId: fullProject.architect?.id || fullProject.architectId || '',
+      engineerId:  fullProject.engineer?.id  || fullProject.engineerId  || '',
       totalValue: fullProject.totalValue != null ? formatNumber(String(fullProject.totalValue)) : '',
       durationMonths: fullProject.durationMonths != null ? formatNumber(String(fullProject.durationMonths)) : '',
       laborHours: fullProject.laborHours != null ? formatNumber(String(fullProject.laborHours)) : '',
@@ -243,13 +244,13 @@ export default function ProjectsIndex() {
                     {project.location && <div className="text-xs text-slate-400 font-normal mt-0.5">{project.location}</div>}
                   </td>
                   <td className="px-6 py-4 hidden lg:table-cell">
-                    {project.metadata?.ownerName && (
-                      <div className="text-xs text-slate-700 dark:text-slate-300 font-medium">{project.metadata.ownerName}</div>
+                    {project.owner?.name && (
+                      <div className="text-xs text-slate-700 dark:text-slate-300 font-medium">{project.owner.name}</div>
                     )}
-                    {project.metadata?.generalContractorName && (
-                      <div className="text-xs text-slate-500 mt-0.5">{project.metadata.generalContractorName}</div>
+                    {project.gc?.name && (
+                      <div className="text-xs text-slate-500 mt-0.5">{project.gc.name}</div>
                     )}
-                    {!project.metadata?.ownerName && !project.metadata?.generalContractorName && (
+                    {!project.owner?.name && !project.gc?.name && (
                       <span className="text-xs text-slate-400 italic">Not set</span>
                     )}
                   </td>
@@ -327,14 +328,38 @@ export default function ProjectsIndex() {
           <FormField as="textarea" label="Description"
             value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief project overview..." />
           <div className="grid grid-cols-2 gap-4">
-             <FormField as="input" label="Owner Name" placeholder="e.g. Acme Corp"
-              value={form.ownerName} onChange={e => setForm(f => ({ ...f, ownerName: e.target.value }))} />
-             <FormField as="input" label="General Contractor" placeholder="e.g. BuildCo"
-              value={form.generalContractorName} onChange={e => setForm(f => ({ ...f, generalContractorName: e.target.value }))} />
-             <FormField as="input" label="Architect" placeholder="e.g. Design Studio"
-              value={form.architectName} onChange={e => setForm(f => ({ ...f, architectName: e.target.value }))} />
-             <FormField as="input" label="Engineer" placeholder="e.g. Engineering Ltd"
-              value={form.engineerName} onChange={e => setForm(f => ({ ...f, engineerName: e.target.value }))} />
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Owner</label>
+              <select className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                value={form.ownerId} onChange={e => setForm(f => ({ ...f, ownerId: e.target.value }))}>
+                <option value="">— Not assigned —</option>
+                {stakeholders.filter(s => s.type === 'OWNER' || s.type === 'OTHER').map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">General Contractor</label>
+              <select className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                value={form.gcId} onChange={e => setForm(f => ({ ...f, gcId: e.target.value }))}>
+                <option value="">— Not assigned —</option>
+                {stakeholders.filter(s => ['GENERAL_CONTRACTOR','SUBCONTRACTOR','OTHER'].includes(s.type)).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Architect</label>
+              <select className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                value={form.architectId} onChange={e => setForm(f => ({ ...f, architectId: e.target.value }))}>
+                <option value="">— Not assigned —</option>
+                {stakeholders.filter(s => ['ARCHITECT','CONSULTANT','OTHER'].includes(s.type)).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Engineer</label>
+              <select className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                value={form.engineerId} onChange={e => setForm(f => ({ ...f, engineerId: e.target.value }))}>
+                <option value="">— Not assigned —</option>
+                {stakeholders.filter(s => ['ENGINEER','CONSULTANT','OTHER'].includes(s.type)).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">

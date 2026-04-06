@@ -19,6 +19,8 @@ import RFIsIndex from './pages/RFIs/index';
 import EmployeesPage from './pages/Employees/index';
 import ProjectDirectory from './pages/ProjectDirectory';
 import EVMIndex from './pages/EVM/index';
+import StakeholdersIndex from './pages/Stakeholders/index';
+import SettingsIndex from './pages/Settings/index';
 
 function App() {
   return (
@@ -42,6 +44,8 @@ function App() {
               <Route path="submittals" element={<SubmittalsIndex />} />
               <Route path="rfis" element={<RFIsIndex />} />
               <Route path="employees" element={<EmployeesPage />} />
+              <Route path="stakeholders" element={<StakeholdersIndex />} />
+              <Route path="settings" element={<SettingsIndex />} />
             </Route>
 
             {/* Catch-all 404 */}

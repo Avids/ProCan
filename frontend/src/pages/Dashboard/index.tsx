@@ -31,6 +31,8 @@ interface MetricPayload {
   };
 }
 
+interface StakeholderRef { id: string; name: string; }
+
 interface FullProjectData {
   id: string;
   projectNumber: string;
@@ -41,7 +43,10 @@ interface FullProjectData {
   startDate: string | null;
   finishDate: string | null;
   durationMonths: number | null;
-  metadata: Record<string, string> | null;
+  owner?: StakeholderRef | null;
+  gc?: StakeholderRef | null;
+  architect?: StakeholderRef | null;
+  engineer?: StakeholderRef | null;
   projectAssignments: {
     id: string;
     positionInProject: string | null;
@@ -124,7 +129,6 @@ export default function DashboardIndex() {
   );
 
   const { kpi, charts } = metrics;
-  const meta = project.metadata || {};
 
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
@@ -137,13 +141,13 @@ export default function DashboardIndex() {
   ];
 
   const infoFields = [
-    { icon: User,         label: 'Owner',              value: meta.ownerName },
-    { icon: HardHat,      label: 'General Contractor',  value: meta.generalContractorName },
-    { icon: Ruler,        label: 'Architect',            value: meta.architectName },
-    { icon: Wrench,       label: 'Engineer',             value: meta.engineerName },
-    { icon: CalendarDays, label: 'Start Date',           value: project.startDate ? new Date(project.startDate).toLocaleDateString() : null },
-    { icon: Timer,        label: 'Duration',             value: project.durationMonths ? `${project.durationMonths} months` : null },
-    { icon: CalendarCheck,label: 'Planned Finish',       value: project.finishDate ? new Date(project.finishDate).toLocaleDateString() : null },
+    { icon: User,         label: 'Owner',            value: project.owner?.name },
+    { icon: HardHat,      label: 'Gen. Contractor',  value: project.gc?.name },
+    { icon: Ruler,        label: 'Architect',         value: project.architect?.name },
+    { icon: Wrench,       label: 'Engineer',          value: project.engineer?.name },
+    { icon: CalendarDays, label: 'Start Date',        value: project.startDate ? new Date(project.startDate).toLocaleDateString() : null },
+    { icon: Timer,        label: 'Duration',          value: project.durationMonths ? `${project.durationMonths} months` : null },
+    { icon: CalendarCheck,label: 'Planned Finish',    value: project.finishDate ? new Date(project.finishDate).toLocaleDateString() : null },
   ] as { icon: any; label: string; value: string | null | undefined }[];
 
   return (

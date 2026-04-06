@@ -10,26 +10,44 @@ router.use(authenticate);
 router.get('/', getProjects);
 router.get('/:id', getProject);
 
-// CREATE — Company Manager or Project Manager
+// ── Helper: stakeholder include fragment ──────────────────────────────────────
+const stakeholderInclude = {
+  owner:     { include: { contacts: { where: { isPrimary: true }, take: 1 } } },
+  gc:        { include: { contacts: { where: { isPrimary: true }, take: 1 } } },
+  architect: { include: { contacts: { where: { isPrimary: true }, take: 1 } } },
+  engineer:  { include: { contacts: { where: { isPrimary: true }, take: 1 } } },
+};
+
+// ── CREATE ────────────────────────────────────────────────────────────────────
 router.post('/', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (req: any, res, next) => {
   try {
-    const { projectNumber, name, location, description, generalContractorName, ownerName, architectName, engineerName, totalValue, durationMonths, startDate, finishDate, status, laborHours, laborValue, materialCost, managerId } = req.body;
+    const {
+      projectNumber, name, location, description,
+      ownerId, gcId, architectId, engineerId,
+      totalValue, durationMonths, startDate, finishDate,
+      status, laborHours, laborValue, materialCost, managerId
+    } = req.body;
+
     if (!projectNumber || !name || totalValue == null || durationMonths == null)
       return res.status(400).json({ message: 'projectNumber, name, totalValue, and durationMonths are required' });
 
     const project = await prisma.project.create({
       data: {
         projectNumber, name, location, description,
-        metadata: { generalContractorName, ownerName, architectName, engineerName },
+        ownerId:     ownerId     || null,
+        gcId:        gcId        || null,
+        architectId: architectId || null,
+        engineerId:  engineerId  || null,
         totalValue: Number(totalValue),
         durationMonths: Number(durationMonths),
-        laborHours: laborHours != null ? Number(laborHours) : undefined,
-        laborValue: laborValue != null ? Number(laborValue) : undefined,
+        laborHours:   laborHours   != null ? Number(laborHours)   : undefined,
+        laborValue:   laborValue   != null ? Number(laborValue)   : undefined,
         materialCost: materialCost != null ? Number(materialCost) : undefined,
-        startDate: startDate ? new Date(startDate) : undefined,
+        startDate:  startDate  ? new Date(startDate)  : undefined,
         finishDate: finishDate ? new Date(finishDate) : undefined,
-        status: status || 'PLANNING'
-      }
+        status: status || 'PLANNING',
+      },
+      include: stakeholderInclude,
     });
 
     if (managerId) {
@@ -39,8 +57,8 @@ router.post('/', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (r
           employeeId: managerId,
           positionInProject: 'Project Manager',
           moduleAccess: 'ALL',
-          assignedById: req.user.id
-        }
+          assignedById: req.user.id,
+        },
       });
     }
 
@@ -52,61 +70,55 @@ router.post('/', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (r
   }
 });
 
-// UPDATE — Company Manager or Project Manager (scoped check done client-side; backend trusts JWT role)
+// ── UPDATE ────────────────────────────────────────────────────────────────────
 router.patch('/:id', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (req: any, res, next) => {
   try {
     const before = await prisma.project.findUnique({ where: { id: req.params.id } });
     if (!before) return res.status(404).json({ message: 'Project not found' });
 
-    const { totalValue, durationMonths, startDate, finishDate, actualStartDate, actualFinishDate, laborHours, laborValue, materialCost, managerId, evmData, generalContractorName, ownerName, architectName, engineerName, ...rest } = req.body;
-    
-    // We safely parse existing metadata to not overwrite unrelated keys
-    const metaObj = (before.metadata as object) || {};
-    const newMeta = {
-      ...metaObj,
-      ...(generalContractorName !== undefined ? { generalContractorName } : {}),
-      ...(ownerName !== undefined ? { ownerName } : {}),
-      ...(architectName !== undefined ? { architectName } : {}),
-      ...(engineerName !== undefined ? { engineerName } : {})
-    };
+    const {
+      totalValue, durationMonths, startDate, finishDate, actualStartDate, actualFinishDate,
+      laborHours, laborValue, materialCost, managerId, evmData,
+      ownerId, gcId, architectId, engineerId,
+      // strip old metadata stakeholder strings if still sent
+      generalContractorName: _gcn, ownerName: _on, architectName: _an, engineerName: _en,
+      ...rest
+    } = req.body;
+
     const updated = await prisma.project.update({
       where: { id: req.params.id },
       data: {
         ...rest,
-        metadata: Object.keys(newMeta).length > 0 ? newMeta : undefined,
         ...(evmData !== undefined ? { evmData } : {}),
-        ...(totalValue != null ? { totalValue: Number(totalValue) } : {}),
+        ...(ownerId     !== undefined ? { ownerId:     ownerId     || null } : {}),
+        ...(gcId        !== undefined ? { gcId:        gcId        || null } : {}),
+        ...(architectId !== undefined ? { architectId: architectId || null } : {}),
+        ...(engineerId  !== undefined ? { engineerId:  engineerId  || null } : {}),
+        ...(totalValue    != null ? { totalValue:    Number(totalValue)    } : {}),
         ...(durationMonths != null ? { durationMonths: Number(durationMonths) } : {}),
-        ...(laborHours != null ? { laborHours: Number(laborHours) } : {}),
-        ...(laborValue != null ? { laborValue: Number(laborValue) } : {}),
-        ...(materialCost != null ? { materialCost: Number(materialCost) } : {}),
-        ...(startDate ? { startDate: new Date(startDate) } : {}),
+        ...(laborHours    != null ? { laborHours:    Number(laborHours)    } : {}),
+        ...(laborValue    != null ? { laborValue:    Number(laborValue)    } : {}),
+        ...(materialCost  != null ? { materialCost:  Number(materialCost)  } : {}),
+        ...(startDate  ? { startDate:  new Date(startDate)  } : {}),
         ...(finishDate ? { finishDate: new Date(finishDate) } : {}),
-        ...(actualStartDate ? { actualStartDate: new Date(actualStartDate) } : {}),
+        ...(actualStartDate  ? { actualStartDate:  new Date(actualStartDate)  } : {}),
         ...(actualFinishDate ? { actualFinishDate: new Date(actualFinishDate) } : {}),
-      }
+      },
+      include: stakeholderInclude,
     });
 
     if (managerId !== undefined) {
-      // First try to find if there is already a Project Manager assigned
-      const existingAssignment = await prisma.projectAssignment.findFirst({
-        where: { projectId: updated.id, positionInProject: 'Project Manager' }
+      const existing = await prisma.projectAssignment.findFirst({
+        where: { projectId: updated.id, positionInProject: 'Project Manager' },
       });
-      
-      if (!managerId && existingAssignment) {
-        // user removed the manager -> delete
-        await prisma.projectAssignment.delete({ where: { id: existingAssignment.id } });
-      } else if (managerId && !existingAssignment) {
-        // create new
+      if (!managerId && existing) {
+        await prisma.projectAssignment.delete({ where: { id: existing.id } });
+      } else if (managerId && !existing) {
         await prisma.projectAssignment.create({
-          data: { projectId: updated.id, employeeId: managerId, positionInProject: 'Project Manager', moduleAccess: 'ALL', assignedById: req.user.id }
+          data: { projectId: updated.id, employeeId: managerId, positionInProject: 'Project Manager', moduleAccess: 'ALL', assignedById: req.user.id },
         });
-      } else if (managerId && existingAssignment && existingAssignment.employeeId !== managerId) {
-        // update existing
-        await prisma.projectAssignment.update({
-          where: { id: existingAssignment.id },
-          data: { employeeId: managerId }
-        });
+      } else if (managerId && existing && existing.employeeId !== managerId) {
+        await prisma.projectAssignment.update({ where: { id: existing.id }, data: { employeeId: managerId } });
       }
     }
 
@@ -115,12 +127,12 @@ router.patch('/:id', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), asyn
   } catch (err) { next(err); }
 });
 
-// DELETE — Company Manager only, blocked if active materials exist
+// ── DELETE ────────────────────────────────────────────────────────────────────
 router.delete('/:id', authorizeRole(['COMPANY_MANAGER']), async (req: any, res, next) => {
   try {
     const project = await prisma.project.findUnique({
       where: { id: req.params.id },
-      include: { materials: { where: { status: { notIn: ['REJECTED'] } }, select: { id: true } } }
+      include: { materials: { where: { status: { notIn: ['REJECTED'] } }, select: { id: true } } },
     });
     if (!project) return res.status(404).json({ message: 'Project not found' });
     if (project.materials.length > 0)
@@ -132,23 +144,14 @@ router.delete('/:id', authorizeRole(['COMPANY_MANAGER']), async (req: any, res, 
   } catch (err) { next(err); }
 });
 
-// ASSIGN employee to project
+// ── ASSIGN employee ───────────────────────────────────────────────────────────
 router.post('/:id/assign', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (req: any, res, next) => {
   try {
     const { employeeId, positionInProject, moduleAccess } = req.body;
     if (!employeeId) return res.status(400).json({ message: 'employeeId is required' });
-
     const assignment = await prisma.projectAssignment.create({
-      data: {
-        projectId: req.params.id,
-        employeeId,
-        positionInProject,
-        moduleAccess: moduleAccess || 'ALL',
-        assignedById: req.user.id
-      },
-      include: {
-        employee: { select: { firstName: true, lastName: true, role: true } }
-      }
+      data: { projectId: req.params.id, employeeId, positionInProject, moduleAccess: moduleAccess || 'ALL', assignedById: req.user.id },
+      include: { employee: { select: { firstName: true, lastName: true, role: true } } },
     });
     await logActivity(req.user.id, 'CREATE', 'project_assignment', assignment.id, null, assignment);
     res.status(201).json(assignment);
@@ -158,7 +161,7 @@ router.post('/:id/assign', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER'])
   }
 });
 
-// REMOVE assignment
+// ── REMOVE assignment ──────────────────────────────────────────────────────────
 router.delete('/:id/assign/:assignmentId', authorizeRole(['COMPANY_MANAGER', 'PROJECT_MANAGER']), async (req: any, res, next) => {
   try {
     const assignment = await prisma.projectAssignment.findUnique({ where: { id: req.params.assignmentId } });

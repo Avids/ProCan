@@ -14,7 +14,10 @@ export const getAllProjects = async () => {
       startDate: true,
       finishDate: true,
       durationMonths: true,
-      metadata: true,
+      owner:     { select: { id: true, name: true } },
+      gc:        { select: { id: true, name: true } },
+      architect: { select: { id: true, name: true } },
+      engineer:  { select: { id: true, name: true } },
       _count: {
         select: {
           projectAssignments: true,
@@ -29,6 +32,10 @@ export const getProjectById = async (id: string) => {
   const project = await prisma.project.findUnique({
     where: { id },
     include: {
+      owner:     { include: { contacts: { where: { isPrimary: true }, take: 1 } } },
+      gc:        { include: { contacts: { where: { isPrimary: true }, take: 1 } } },
+      architect: { include: { contacts: { where: { isPrimary: true }, take: 1 } } },
+      engineer:  { include: { contacts: { where: { isPrimary: true }, take: 1 } } },
       projectAssignments: {
         include: {
           employee: {

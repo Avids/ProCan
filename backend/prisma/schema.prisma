@@ -131,6 +131,19 @@ enum ModuleAccess {
   @@map("module_access")
 }
 
+enum StakeholderType {
+  OWNER
+  GENERAL_CONTRACTOR
+  ARCHITECT
+  ENGINEER
+  SUBCONTRACTOR
+  CONSULTANT
+  AUTHORITY
+  OTHER
+
+  @@map("stakeholder_type")
+}
+
 // ============================================
 // TABLE 1: Vendors / Suppliers
 // ============================================
@@ -182,6 +195,16 @@ model Project {
   evmData          Json?         @default("{}") // High security explicit monthly EVM Configurations
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+
+  // Stakeholder FK links
+  ownerId          String?
+  gcId             String?
+  architectId      String?
+  engineerId       String?
+  owner            Stakeholder?  @relation("ProjectOwner",     fields: [ownerId],     references: [id])
+  gc               Stakeholder?  @relation("ProjectGC",        fields: [gcId],        references: [id])
+  architect        Stakeholder?  @relation("ProjectArchitect", fields: [architectId], references: [id])
+  engineer         Stakeholder?  @relation("ProjectEngineer",  fields: [engineerId],  references: [id])
 
   // Relationships
   purchaseOrders    PurchaseOrder[]
@@ -430,4 +453,65 @@ model ActivityLog {
   @@index([entityId])
   @@index([createdAt])
   @@map("activity_logs")
+}
+
+// ============================================
+// TABLE: Stakeholders (external parties)
+// ============================================
+
+model Stakeholder {
+  id        String          @id @default(uuid())
+  name      String
+  type      StakeholderType @default(OTHER)
+  address   String?
+  city      String?
+  phone     String?
+  email     String?
+  notes     String?
+  contacts  StakeholderContact[]
+
+  // Back-relations from Project
+  projectsAsOwner     Project[] @relation("ProjectOwner")
+  projectsAsGC        Project[] @relation("ProjectGC")
+  projectsAsArchitect Project[] @relation("ProjectArchitect")
+  projectsAsEngineer  Project[] @relation("ProjectEngineer")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("stakeholders")
+}
+
+model StakeholderContact {
+  id            String      @id @default(uuid())
+  stakeholderId String
+  stakeholder   Stakeholder @relation(fields: [stakeholderId], references: [id], onDelete: Cascade)
+  firstName     String
+  lastName      String
+  position      String?
+  email         String?
+  phone         String?
+  isPrimary     Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+
+  @@map("stakeholder_contacts")
+}
+
+// ============================================
+// TABLE: Company Settings (singleton)
+// ============================================
+
+model CompanySettings {
+  id         String   @id @default("singleton")
+  name       String   @default("My Company")
+  address    String?
+  city       String?
+  province   String?
+  postalCode String?
+  phone      String?
+  email      String?
+  website    String?
+  updatedAt  DateTime @updatedAt
+
+  @@map("company_settings")
 }
