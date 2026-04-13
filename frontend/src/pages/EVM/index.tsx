@@ -65,15 +65,16 @@ function ChartLegend({ items }: { items: { color: string; label: string; dash?: 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function EVMIndex() {
   const { activeProject } = useProject();
-  const [activeTab, setActiveTab] = useState<'setup' | 'data' | 'dash'>('setup');
+  const [activeTab, setActiveTab] = useState<'setup' | 'data' | 'dash' | 'cashflow'>('setup');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [evmState, setEvmState] = useState<EvmState>(EMPTY_STATE);
 
   // Refs for chart containers — used by html2canvas for PDF export
-  const sCurveRef = useRef<HTMLDivElement>(null);
-  const indexRef  = useRef<HTMLDivElement>(null);
-  const varRef    = useRef<HTMLDivElement>(null);
+  const sCurveRef     = useRef<HTMLDivElement>(null);
+  const indexRef      = useRef<HTMLDivElement>(null);
+  const varRef        = useRef<HTMLDivElement>(null);
+  const cfChartRef    = useRef<HTMLDivElement>(null); // client cashflow chart
 
   // ── Calculate metrics ──────────────────────────────────────────────────────
   const calcData = useMemo(() => {
@@ -123,7 +124,25 @@ export default function EVMIndex() {
     return {
       labels, pv, ev, ac, spi, cpi, cv, sv,
       sCurveData, indexData, varData,
-      kpis: { curEV, curAC, curPV, curCPI, curSPI, eac, vac, etc, cv: n ? cv[n-1] : 0, sv: n ? sv[n-1] : 0, bac: evmState.bac }
+      kpis: { curEV, curAC, curPV, curCPI, curSPI, eac, vac, etc, cv: n ? cv[n-1] : 0, sv: n ? sv[n-1] : 0, bac: evmState.bac },
+
+      // ── Client Billing Schedule (Contract Value × planned S-curve) ─────────
+      clientCashflow: (() => {
+        const cv = evmState.contractValue;
+        const rows: { name: string; monthlyPct: number; monthlyPayment: number; cumulativePayment: number }[] = [];
+        for (let i = 0; i < evmState.duration; i++) {
+          const prevPct     = i > 0 ? (evmState.planned[i - 1] || 0) : 0;
+          const monthlyPct  = Math.max(0, (evmState.planned[i] || 0) - prevPct);
+          const cumPct      = evmState.planned[i] || 0;
+          rows.push({
+            name: 'M' + (i + 1),
+            monthlyPct:        +monthlyPct.toFixed(2),
+            monthlyPayment:    Math.round((monthlyPct / 100) * cv),
+            cumulativePayment: Math.round((cumPct / 100) * cv),
+          });
+        }
+        return rows;
+      })(),
     };
   }, [evmState]);
 
@@ -334,6 +353,166 @@ export default function EVMIndex() {
     doc.save(`${projectName.replace(/[^a-z0-9]/gi, '_')}_EVM_dashboard.pdf`);
   }, [calcData, activeProject, activeTab]);
 
+  // ── Client Cashflow PDF export ─────────────────────────────────────────────
+  const exportClientCashflowPDF = useCallback(async () => {
+    if (!evmState.contractValue || evmState.contractValue === 0) {
+      alert('Please set a Contract Value in the Setup tab first.'); return;
+    }
+    if (activeTab !== 'cashflow') {
+      alert('Please switch to the Cashflow Forecast tab so the chart is visible, then export again.'); return;
+    }
+
+    const { jsPDF }   = await import('jspdf');
+    const autoTable   = (await import('jspdf-autotable')).default;
+    const html2canvas = (await import('html2canvas')).default;
+    const api         = (await import('../../lib/api')).default;
+
+    const doc     = new jsPDF({ unit: 'mm', format: 'a4' });
+    const PAGE_W  = doc.internal.pageSize.getWidth();
+    const PAGE_H  = doc.internal.pageSize.getHeight();
+    const ML      = 14;
+    const PW      = PAGE_W - ML * 2;
+    const NAVY: [number,number,number] = [15, 52, 96];
+
+    const projectName = activeProject?.name ?? 'Project';
+    const ts          = `Prepared ${new Date().toLocaleDateString()}`;
+    const fmtD        = (v: number) => '$' + Math.round(v).toLocaleString();
+    const cf          = calcData.clientCashflow;
+
+    // ── Fetch company info & logo ──────────────────────────────────────────
+    let company: any = {};
+    let logoBase64: string | null = null;
+    try {
+      const [settingsRes, logoRes] = await Promise.allSettled([
+        api.get('/settings/company'),
+        api.get('/settings/logo/proxy'),
+      ]);
+      if (settingsRes.status === 'fulfilled') company = settingsRes.value.data || {};
+      if (logoRes.status === 'fulfilled')     logoBase64 = logoRes.value.data?.base64 || null;
+    } catch { /* proceed without */ }
+
+    // ── Company header block (reusable per page) ───────────────────────────
+    const HEADER_H  = 26;
+    const RIBBON_H  = 10;
+    const CONTENT_Y = HEADER_H + RIBBON_H; // where body content starts after header+ribbon
+
+    const drawHeader = (ribbonTitle: string, ribbonRight: string) => {
+      // White header zone
+      doc.setFillColor(252, 252, 252);
+      doc.rect(0, 0, PAGE_W, HEADER_H, 'F');
+
+      // Logo
+      const textX = logoBase64 ? ML + 20 : ML;
+      if (logoBase64) {
+        try { doc.addImage(logoBase64, 'JPEG', ML, 4, 16, 16); } catch { /* skip */ }
+      }
+
+      // Company name
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(20, 20, 20);
+      doc.text(company.name || 'Company', textX, 11);
+
+      // Company address line
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(90, 90, 90);
+      const addrParts = [
+        company.address,
+        [company.city, company.province, company.postalCode].filter(Boolean).join(', '),
+        company.phone ? `Tel: ${company.phone}` : null,
+        company.email ? `Email: ${company.email}` : null,
+      ].filter(Boolean);
+      if (addrParts.length) doc.text(addrParts.join('   ·   '), textX, 17);
+
+      // Navy ribbon
+      doc.setFillColor(...NAVY);
+      doc.rect(0, HEADER_H, PAGE_W, RIBBON_H, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text(ribbonTitle, ML, HEADER_H + 7);
+      doc.text(ribbonRight, PAGE_W - ML, HEADER_H + 7, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+    };
+
+    // ── Footer: page numbering per page ───────────────────────────────────
+    const drawFooters = () => {
+      const totalPages = doc.getNumberOfPages();
+      const FOOTER_Y   = PAGE_H - 10;
+      for (let pg = 1; pg <= totalPages; pg++) {
+        doc.setPage(pg);
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.2);
+        doc.line(ML, FOOTER_Y - 2, PAGE_W - ML, FOOTER_Y - 2);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(110, 110, 110);
+        doc.text(`Page ${pg} of ${totalPages}`, ML, FOOTER_Y + 3);
+        doc.text(ts, PAGE_W - ML, FOOTER_Y + 3, { align: 'right' });
+      }
+    };
+
+    // ─── PAGE 1: Summary + Chart ─────────────────────────────────────────
+    drawHeader('CASHFLOW FORECAST', projectName);
+
+    (autoTable as any)(doc, {
+      startY: CONTENT_Y + 4,
+      body: [
+        ['Contract Value', fmtD(evmState.contractValue), 'Duration',              `${evmState.duration} months`],
+        ['Total Planned Payments', fmtD(evmState.contractValue), 'Avg Monthly Payment', fmtD(evmState.contractValue / evmState.duration)],
+      ],
+      styles: { fontSize: 9 },
+      columnStyles: { 0: { fontStyle: 'bold' as const }, 2: { fontStyle: 'bold' as const } },
+      theme: 'grid',
+      margin: { left: ML, right: ML },
+    });
+
+    // Capture cashflow chart
+    let imgCF: string | null = null;
+    if (cfChartRef.current) {
+      try {
+        const canvas = await html2canvas(cfChartRef.current, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+        imgCF = canvas.toDataURL('image/png');
+      } catch { }
+    }
+
+    if (imgCF) {
+      const cy = (doc as any).lastAutoTable.finalY + 6;
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...NAVY); doc.text('Monthly Payment Schedule', ML, cy + 4); doc.setTextColor(0, 0, 0);
+      doc.addImage(imgCF, 'PNG', ML, cy + 8, PW, 75);
+    }
+
+    // ─── PAGE 2: Full cashflow table ─────────────────────────────────────
+    doc.addPage();
+    drawHeader('CASHFLOW FORECAST  —  MONTHLY PAYMENT SCHEDULE', projectName);
+
+    (autoTable as any)(doc, {
+      startY: CONTENT_Y + 4,
+      head: [['Month', 'Cumul. Progress (%)', 'Monthly Progress (%)', 'Monthly Payment ($)', 'Cumulative Payment ($)']],
+      body: cf.map((r, i) => [
+        r.name,
+        (evmState.planned[i] || 0) + '%',
+        r.monthlyPct.toFixed(1) + '%',
+        fmtD(r.monthlyPayment),
+        fmtD(r.cumulativePayment),
+      ]),
+      styles: { fontSize: 8.5 },
+      headStyles:          { fillColor: NAVY, textColor: 255, fontStyle: 'bold' as const },
+      alternateRowStyles:  { fillColor: [235, 241, 252] as [number,number,number] },
+      margin: { left: ML, right: ML },
+      foot:      [['TOTAL', '100%', '100%', fmtD(evmState.contractValue), fmtD(evmState.contractValue)]],
+      footStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold' as const },
+    });
+
+    // Stamp footers on every page
+    drawFooters();
+
+    doc.save(`${projectName.replace(/[^a-z0-9]/gi, '_')}_Cashflow_Forecast.pdf`);
+  }, [calcData, evmState, activeProject, activeTab]);
+
+
   // ── Guard: no project ──────────────────────────────────────────────────────
   if (!activeProject) return (
     <div className="py-24 text-center animate-in fade-in">
@@ -347,9 +526,10 @@ export default function EVMIndex() {
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
   const tabs: { key: typeof activeTab; label: string }[] = [
-    { key: 'setup', label: 'Setup Baseline' },
-    { key: 'data',  label: 'Monthly Actuals' },
-    { key: 'dash',  label: 'EVM Dashboard' },
+    { key: 'setup',    label: 'Setup Baseline' },
+    { key: 'data',     label: 'Monthly Actuals' },
+    { key: 'dash',     label: 'EVM Dashboard' },
+    { key: 'cashflow', label: 'Cashflow Forecast' },
   ];
 
   const inputCls = 'w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -619,7 +799,6 @@ export default function EVMIndex() {
                     </ResponsiveContainer>
                   </div>
 
-                  {/* ── Period Detail Table ── */}
                   <div className={cardCls}>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4">Period Detail</h3>
                     <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
@@ -654,6 +833,102 @@ export default function EVMIndex() {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* ══════════════ CASHFLOW FORECAST TAB ══════════════ */}
+          {activeTab === 'cashflow' && (
+            <div className="space-y-6">
+              {/* Header card */}
+              <div className={cardCls}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">Client Cashflow Forecast</h2>
+                    <p className="text-sm text-slate-500 mt-1">Expected monthly payments from client to contractor based on contract value and planned S-curve. For budget planning purposes only.</p>
+                  </div>
+                  <button onClick={exportClientCashflowPDF}
+                    className="px-5 py-2.5 bg-[#0f3460] hover:bg-[#0a2540] text-white rounded-xl font-medium text-sm flex items-center gap-2 transition-colors shrink-0">
+                    <FileDown className="w-4 h-4" /> Export Client PDF
+                  </button>
+                </div>
+
+                {/* Summary KPIs */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                  {[
+                    { label: 'Contract Value', value: '$' + Math.round(evmState.contractValue).toLocaleString(), color: '#0f3460' },
+                    { label: 'Project Duration', value: evmState.duration + ' months', color: '#3b82f6' },
+                    { label: 'Avg Monthly Payment', value: evmState.contractValue > 0 ? '$' + Math.round(evmState.contractValue / evmState.duration).toLocaleString() : '—', color: '#6366f1' },
+                    { label: 'Total Billings at Completion', value: '$' + Math.round(evmState.contractValue).toLocaleString(), color: '#10b981' },
+                  ].map(kpi => (
+                    <div key={kpi.label} style={{ borderLeftColor: kpi.color }}
+                      className="p-4 bg-slate-50 dark:bg-slate-900 border-l-4 border border-slate-100 dark:border-slate-800 rounded-xl">
+                      <div className="text-xs text-slate-500 mb-1">{kpi.label}</div>
+                      <div className="text-xl font-bold" style={{ color: kpi.color }}>{kpi.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Chart */}
+                <div ref={cfChartRef}>
+                  <ChartLegend items={[
+                    { color: '#3b82f6', label: 'Monthly payment ($)' },
+                    { color: '#6366f1', label: 'Cumulative payments ($)', dash: true },
+                  ]} />
+                  <ResponsiveContainer width="100%" height={280}>
+                    <ComposedChart data={calcData.clientCashflow} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" strokeOpacity={0.08} />
+                      <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="left" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false}
+                        tickFormatter={v => '$' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v)} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false}
+                        tickFormatter={v => '$' + (v >= 1000000 ? (v / 1000000).toFixed(1) + 'M' : v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v)} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }}
+                        formatter={(v: any, name: any) => ['$' + Number(v).toLocaleString(), String(name)]}
+                      />
+                      <Bar yAxisId="left" dataKey="monthlyPayment" name="Monthly Payment ($)" fill="#3b82f6" fillOpacity={0.75} radius={[3,3,0,0]} />
+                      <Line yAxisId="right" type="monotone" dataKey="cumulativePayment" name="Cumulative ($)"
+                        stroke="#6366f1" strokeWidth={2.5} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Detail table */}
+              <div className={cardCls}>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4">Monthly Payment Schedule</h3>
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                  <table className="w-full text-sm text-left">
+                    <thead>
+                      <tr className="bg-[#0f3460] text-white">
+                        {['Month', 'Cumulative Progress (%)', 'Monthly Progress (%)', 'Monthly Payment ($)', 'Cumulative Payment ($)'].map(h => (
+                          <th key={h} className={`py-3 px-4 font-bold text-xs uppercase tracking-wider ${h !== 'Month' ? 'text-right' : ''}`}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {calcData.clientCashflow.map((row, i) => (
+                        <tr key={row.name} className={i % 2 === 0 ? 'bg-white dark:bg-slate-950' : 'bg-slate-50/60 dark:bg-slate-900/40'}>
+                          <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">{row.name}</td>
+                          <td className="py-2.5 px-4 text-right font-mono text-slate-600">{evmState.planned[i] || 0}%</td>
+                          <td className="py-2.5 px-4 text-right font-mono text-slate-500">{row.monthlyPct.toFixed(1)}%</td>
+                          <td className="py-2.5 px-4 text-right font-mono font-semibold text-blue-600 dark:text-blue-400">${row.monthlyPayment.toLocaleString()}</td>
+                          <td className="py-2.5 px-4 text-right font-mono text-indigo-600 dark:text-indigo-400">${row.cumulativePayment.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-[#0f3460] text-white font-bold">
+                        <td className="py-3 px-4 text-xs uppercase tracking-wider">Total</td>
+                        <td className="py-3 px-4 text-right font-mono">100%</td>
+                        <td className="py-3 px-4 text-right font-mono">100%</td>
+                        <td className="py-3 px-4 text-right font-mono">${Math.round(evmState.contractValue).toLocaleString()}</td>
+                        <td className="py-3 px-4 text-right font-mono">${Math.round(evmState.contractValue).toLocaleString()}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
         </>
