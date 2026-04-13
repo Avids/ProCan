@@ -10,15 +10,18 @@ import AttachmentPanel from '../../components/AttachmentPanel';
 import ExportDropdown from '../../components/ExportDropdown';
 import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
 import { exportProfessionalPDF } from '../../utils/pdfExportUtils';
+import ProfessionalExportModal from '../../components/ProfessionalExportModal';
 
 const SUBMITTAL_STATUSES = ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'REVISE_AND_RESUBMIT'];
 
 interface Submittal {
   id: string; submittalNumber: string; revisionNumber: number; title: string; description: string | null;
-  status: string; submittedDate: string | null; reviewDurationDays: number | null; dueDate: string | null; notes: string | null;
+  status: string; submittedDate: string | null; reviewDurationDays: number | null; dueDate: string | null;
+  approvedDate: string | null; notes: string | null;
   createdBy: { firstName: string; lastName: string } | null;
   recipientContactId: string | null;
   recipientContact: { firstName: string; lastName: string; stakeholder: { name: string } } | null;
+  attachments?: any[];
 }
 interface ProjectOption { id: string; name: string; projectNumber: string; }
 
@@ -58,6 +61,8 @@ export default function SubmittalsIndex() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportTarget, setExportTarget] = useState<{ data: any; includeAttachments: boolean } | null>(null);
   const [revisingId, setRevisingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Submittal | null>(null);
 
@@ -100,11 +105,13 @@ export default function SubmittalsIndex() {
   const openEdit = (s: Submittal) => {
     setEditingSub(s);
     setForm({
-      submittalNumber: s.submittalNumber, revisionNumber: String(s.revisionNumber ?? 0),
-      title: s.title, description: s.description || '', status: s.status,
-      submittedDate: s.submittedDate?.split('T')[0] || '',
-      reviewDurationDays: s.reviewDurationDays != null ? String(s.reviewDurationDays) : '',
-      dueDate: s.dueDate?.split('T')[0] || '', notes: s.notes || '',
+      submittalNumber: s.submittalNumber === 'N/A' ? '' : s.submittalNumber,
+      revisionNumber: String(s.revisionNumber ?? 0),
+      title: s.title, description: s.description || '',
+      status: s.status, submittedDate: s.submittedDate?.split('T')[0] || '',
+      dueDate: s.dueDate?.split('T')[0] || '',
+      reviewDurationDays: String(s.reviewDurationDays || ''),
+      notes: s.notes || '',
       recipientContactId: s.recipientContactId || ''
     });
     setFormErrors({}); setSaveError(''); setSlideOpen(true);
@@ -127,8 +134,6 @@ export default function SubmittalsIndex() {
     const errors: Partial<typeof emptyForm> = {};
     if (!form.title.trim()) errors.title = 'Title is required';
     if (!form.recipientContactId) errors.recipientContactId = 'Recipient is required';
-    if (form.revisionNumber === '' || isNaN(Number(form.revisionNumber)) || Number(form.revisionNumber) < 0)
-      errors.revisionNumber = 'Revision must be 0 or greater';
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -149,9 +154,9 @@ export default function SubmittalsIndex() {
         setSlideOpen(false);
       } else {
         const res = await api.post('/submittals', payload);
-        setEditingSub(res.data);
+        setEditingSub(res.data); // Capture generated number immediately
       }
-      await fetchAll();
+      await fetchAll(); // Hard refresh to ensure list is in sync
     } catch (err: any) { setSaveError(err.response?.data?.message || 'Failed to save Submittal.'); }
     finally { setIsSaving(false); }
   };
@@ -220,33 +225,30 @@ export default function SubmittalsIndex() {
     exportToPDF(body, columns, `SUBMITTAL_LIST_${dateStr}_${activeProject.name.replace(/\s+/g, '_')}`, 'Submittal Register');
   };
 
-  const handleProfessionalExport = async (s: Submittal, includeAttachments: boolean) => {
+  const handleProfessionalExport = async (sub: Submittal, includeAttachments: boolean) => {
     if (!company) return;
-    setIsExporting(true);
-    try {
-      // Fetch attachments for this submittal
-      const atts = await api.get('/attachments', { params: { entityType: 'submittal', entityId: s.id } });
-      await exportProfessionalPDF({
+    setExportTarget({
+      data: {
+        id: sub.id,
         entityType: 'SUBMITTAL',
-        number: s.submittalNumber,
-        revision: s.revisionNumber,
-        title: s.title,
-        date: s.submittedDate ? new Date(s.submittedDate).toLocaleDateString() : 'N/A',
+        number: sub.submittalNumber,
+        revision: sub.revisionNumber,
+        title: sub.title,
+        date: sub.submittedDate ? new Date(sub.submittedDate).toLocaleDateString() : 'N/A',
         project: `${activeProject?.projectNumber} - ${activeProject?.name}`,
-        fromName: `${s.createdBy?.firstName} ${s.createdBy?.lastName}`,
-        toName: `${s.recipientContact?.firstName} ${s.recipientContact?.lastName}`,
-        toCompany: s.recipientContact?.stakeholder?.name,
-        description: s.description || '',
-        notes: s.notes,
-        attachments: atts.data,
+        fromName: `${user?.firstName} ${user?.lastName}`,
+        toName: `${sub.recipientContact?.firstName} ${sub.recipientContact?.lastName}`,
+        toCompany: sub.recipientContact?.stakeholder?.name,
+        description: sub.description,
+        notes: sub.notes,
+        responseDate: sub.approvedDate ? new Date(sub.approvedDate).toLocaleDateString() : null,
+        status: sub.status,
+        attachments: sub.attachments || [],
         company: company
-      }, includeAttachments);
-    } catch (err) {
-      console.error('Export failed', err);
-      setError('Professional export failed.');
-    } finally {
-      setIsExporting(false);
-    }
+      },
+      includeAttachments
+    });
+    setExportModalOpen(true);
   };
 
   const cols = [
@@ -295,8 +297,8 @@ export default function SubmittalsIndex() {
 
       {error && <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-xl flex items-center gap-3 border border-red-200"><AlertCircle className="w-5 h-5 flex-shrink-0" />{error}</div>}
 
-      <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-visible">
+        <div className="overflow-x-auto pb-32">
           <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
             <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-medium border-b border-slate-200 dark:border-slate-800 uppercase text-[11px] tracking-wider">
               <tr>
@@ -327,9 +329,8 @@ export default function SubmittalsIndex() {
                 return (
                   <React.Fragment key={sub.id}>
                     <tr className={`transition-colors group border-b border-slate-100 dark:border-slate-800 ${pastDue ? 'bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-900/50'}`}>
-                      {/* Submittal # + title */}
                       <td className="px-6 py-4">
-                        <div className="font-bold text-slate-900 dark:text-white">{sub.submittalNumber}</div>
+                        <div className="font-bold text-slate-900 dark:text-white">{sub.submittalNumber || 'N/A'}</div>
                         <div className="text-xs text-slate-500 truncate max-w-xs mt-0.5">{sub.title}</div>
                       </td>
                       {/* Rev */}
@@ -433,15 +434,19 @@ export default function SubmittalsIndex() {
           </div>
 
           <FormField as="select" label="To (Recipient)" required 
-            value={form.recipientContactId} 
+            value={form.recipientContactId || ''} 
             onChange={e => setForm(f => ({ ...f, recipientContactId: e.target.value }))}
             error={formErrors.recipientContactId}>
             <option value="">Select a Recipient...</option>
             {stakeholders.map(s => (
               <optgroup key={s.id} label={s.name}>
-                {s.contacts?.map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.firstName} {c.lastName} ({c.position || 'No Position'})</option>
-                ))}
+                {s.contacts && s.contacts.length > 0 ? (
+                  s.contacts.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.firstName} {c.lastName} ({c.position || 'No Position'})</option>
+                  ))
+                ) : (
+                  <option disabled>No contacts available for this company</option>
+                )}
               </optgroup>
             ))}
           </FormField>
@@ -472,10 +477,21 @@ export default function SubmittalsIndex() {
           <FormField as="textarea" label="Notes" value={form.notes}
             onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes..." />
 
-          {/* Attachments — only shown when editing an existing submittal */}
-          {editingSub && (
-            <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
+          {/* Attachments & Links */}
+          {editingSub ? (
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-4 flex flex-col gap-3">
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-xs rounded-lg border border-blue-100 dark:border-blue-800">
+                <AlertCircle className="w-4 h-4" />
+                You can now add files and links to this submittal below.
+              </div>
               <AttachmentPanel entityType="submittal" entityId={editingSub.id} canMutate={canMutate} />
+            </div>
+          ) : (
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
+              <div className="flex items-start gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg text-slate-500 dark:text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800">
+                <Paperclip className="w-4 h-4 mt-0.5" />
+                <span>Files and links can be added <strong>after</strong> you first save the submittal details.</span>
+              </div>
             </div>
           )}
 
@@ -493,6 +509,12 @@ export default function SubmittalsIndex() {
 
       <ConfirmDialog isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} isLoading={isDeleting}
         title="Delete Submittal" message={`Delete "${deleteTarget?.submittalNumber}" Rev ${deleteTarget?.revisionNumber}? Only DRAFT submittals can be removed.`} />
+      <ProfessionalExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        data={exportTarget?.data}
+        includeAttachments={exportTarget?.includeAttachments || false}
+      />
     </div>
   );
 }

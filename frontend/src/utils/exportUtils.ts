@@ -4,7 +4,7 @@ import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
 const sanitizeFileName = (name: string) => {
-  return name.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, '_').trim();
+  return name.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, '_').replace(/[^\x00-\x7F]/g, '').trim();
 };
 
 /**
@@ -55,8 +55,9 @@ export const exportToPDF = (
     alternateRowStyles: { fillColor: [248, 250, 252] },
   });
 
-  const sanitized = sanitizeFileName(fileName) + '.pdf';
-  doc.save(sanitized);
+  const name = sanitizeFileName(fileName);
+  const finalName = name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`;
+  doc.save(finalName); 
 };
 
 /**

@@ -38,8 +38,8 @@ router.post('/', async (req: any, res, next) => {
     if (!projectId || !title)
       return res.status(400).json({ message: 'projectId and title are required' });
 
-    let finalSubmittalNumber = submittalNumber;
-    if (!finalSubmittalNumber) {
+    let finalSubmittalNumber = submittalNumber ? String(submittalNumber).trim() : '';
+    if (!finalSubmittalNumber || finalSubmittalNumber.toUpperCase() === 'N/A') {
       const maxSub = await prisma.submittal.findFirst({
         where: { projectId },
         orderBy: { submittalNumber: 'desc' }
@@ -51,6 +51,8 @@ router.post('/', async (req: any, res, next) => {
         const count = await prisma.submittal.count({ where: { projectId } });
         finalSubmittalNumber = `SUB-${String(count + 1).padStart(3, '0')}`;
       }
+    } else if (!finalSubmittalNumber.startsWith('SUB-')) {
+      finalSubmittalNumber = `SUB-${finalSubmittalNumber}`;
     }
 
     const created = await prisma.submittal.create({

@@ -40,8 +40,8 @@ router.post('/', async (req: any, res, next) => {
     if (!projectId || !question || !title)
       return res.status(400).json({ message: 'projectId, title, and question are required' });
 
-    let finalRfiNumber = rfiNumber;
-    if (!finalRfiNumber) {
+    let finalRfiNumber = rfiNumber ? String(rfiNumber).trim() : '';
+    if (!finalRfiNumber || finalRfiNumber.toUpperCase() === 'N/A') {
       const maxRfi = await prisma.rFI.findFirst({
         where: { projectId },
         orderBy: { rfiNumber: 'desc' }
@@ -53,6 +53,8 @@ router.post('/', async (req: any, res, next) => {
         const count = await prisma.rFI.count({ where: { projectId } });
         finalRfiNumber = `RFI-${String(count + 1).padStart(3, '0')}`;
       }
+    } else if (!finalRfiNumber.startsWith('RFI-')) {
+      finalRfiNumber = `RFI-${finalRfiNumber}`;
     }
 
     const created = await prisma.rFI.create({

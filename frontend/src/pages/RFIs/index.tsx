@@ -10,6 +10,7 @@ import AttachmentPanel from '../../components/AttachmentPanel';
 import ExportDropdown from '../../components/ExportDropdown';
 import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
 import { exportProfessionalPDF } from '../../utils/pdfExportUtils';
+import ProfessionalExportModal from '../../components/ProfessionalExportModal';
 
 const RFI_STATUSES = ['DRAFT', 'SUBMITTED', 'ANSWERED', 'CLOSED'];
 
@@ -20,6 +21,7 @@ interface RFI {
   raisedBy: { firstName: string; lastName: string } | null;
   recipientContactId: string | null;
   recipientContact: { firstName: string; lastName: string; stakeholder: { name: string } } | null;
+  attachments?: any[];
 }
 
 const statusColor = (s: string) => ({
@@ -57,6 +59,8 @@ export default function RFIsIndex() {
   const [stakeholders, setStakeholders] = useState<any[]>([]);
   const [company, setCompany] = useState<any>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportTarget, setExportTarget] = useState<{ data: any; includeAttachments: boolean } | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!activeProject) return;
@@ -101,7 +105,8 @@ export default function RFIsIndex() {
   const openEdit = (r: RFI) => {
     setEditingRFI(r);
     setForm({
-      rfiNumber: r.rfiNumber, revisionNumber: String(r.revisionNumber ?? 0),
+      rfiNumber: r.rfiNumber === 'N/A' ? '' : r.rfiNumber, 
+      revisionNumber: String(r.revisionNumber ?? 0),
       title: r.title, question: r.question, response: r.response || '',
       status: r.status, dateRaised: r.dateRaised.split('T')[0],
       responseDate: r.responseDate?.split('T')[0] || '',
@@ -135,9 +140,9 @@ export default function RFIsIndex() {
         setSlideOpen(false);
       } else {
         const res = await api.post('/rfis', payload);
-        setEditingRFI(res.data);
+        setEditingRFI(res.data); // Capture generated number immediately
       }
-      await fetchAll();
+      await fetchAll(); // Hard refresh to ensure list is in sync
     } catch (err: any) { setSaveError(err.response?.data?.message || 'Failed to save RFI.'); }
     finally { setIsSaving(false); }
   };
@@ -202,13 +207,11 @@ export default function RFIsIndex() {
 
   const handleProfessionalExport = async (r: RFI, includeAttachments: boolean) => {
     if (!company) return;
-    setIsExporting(true);
-    try {
-      // Fetch attachments for this RFI
-      const atts = await api.get('/attachments', { params: { entityType: 'rfi', entityId: r.id } });
-      await exportProfessionalPDF({
+    setExportTarget({
+      data: {
+        id: r.id,
         entityType: 'RFI',
-        number: r.rfiNumber,
+        number: r.rfiNumber && r.rfiNumber !== 'N/A' ? r.rfiNumber : '(unnumbered)',
         revision: r.revisionNumber,
         title: r.title,
         date: new Date(r.dateRaised).toLocaleDateString(),
@@ -218,15 +221,14 @@ export default function RFIsIndex() {
         toCompany: r.recipientContact?.stakeholder?.name,
         description: r.question,
         response: r.response,
-        attachments: atts.data,
+        responseDate: r.responseDate ? new Date(r.responseDate).toLocaleDateString() : null,
+        status: r.status,
+        attachments: data.find(item => item.id === r.id)?.attachments || [], // We'll fetch in modal
         company: company
-      }, includeAttachments);
-    } catch (err) {
-      console.error('Export failed', err);
-      setError('Professional export failed.');
-    } finally {
-      setIsExporting(false);
-    }
+      },
+      includeAttachments
+    });
+    setExportModalOpen(true);
   };
 
   return (
@@ -270,8 +272,8 @@ export default function RFIsIndex() {
 
       {error && <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-xl flex items-center gap-3 border border-red-200"><AlertCircle className="w-5 h-5 flex-shrink-0" />{error}</div>}
 
-      <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-visible">
+        <div className="overflow-x-auto pb-32">
           <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
             <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-medium border-b border-slate-200 dark:border-slate-800 uppercase text-[11px] tracking-wider">
               <tr>
@@ -303,7 +305,7 @@ export default function RFIsIndex() {
                   <React.Fragment key={rfi.id}>
                     <tr className={`transition-colors group border-b border-slate-100 dark:border-slate-800 ${overdue ? 'bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-900/50'}`}>
                       <td className="px-6 py-4">
-                        <div className="font-bold text-slate-900 dark:text-white">{rfi.rfiNumber}</div>
+                        <div className="font-bold text-slate-900 dark:text-white">{rfi.rfiNumber || 'N/A'}</div>
                         <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{rfi.title}</div>
                         <div className="text-[10px] text-slate-500 italic truncate max-w-[200px] mt-0.5">"{truncate(rfi.question, 40)}"</div>
                       </td>
@@ -397,15 +399,19 @@ export default function RFIsIndex() {
           </div>
 
           <FormField as="select" label="To (Recipient)" required 
-            value={form.recipientContactId} 
+            value={form.recipientContactId || ''} 
             onChange={e => setForm(f => ({ ...f, recipientContactId: e.target.value }))}
             error={formErrors.recipientContactId}>
             <option value="">Select a Recipient...</option>
             {stakeholders.map(s => (
               <optgroup key={s.id} label={s.name}>
-                {s.contacts?.map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.firstName} {c.lastName} ({c.position || 'No Position'})</option>
-                ))}
+                {s.contacts && s.contacts.length > 0 ? (
+                  s.contacts.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.firstName} {c.lastName} ({c.position || 'No Position'})</option>
+                  ))
+                ) : (
+                  <option disabled>No contacts available for this company</option>
+                )}
               </optgroup>
             ))}
           </FormField>
@@ -430,10 +436,21 @@ export default function RFIsIndex() {
             )}
           </div>
 
-          {/* Attachments — only shown when editing an existing RFI */}
-          {editingRFI && (
-            <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
+          {/* Attachments & Links */}
+          {editingRFI ? (
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-4 flex flex-col gap-3">
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-xs rounded-lg border border-blue-100 dark:border-blue-800">
+                <AlertCircle className="w-4 h-4" />
+                You can now add files and links to this RFI below.
+              </div>
               <AttachmentPanel entityType="rfi" entityId={editingRFI.id} canMutate={canMutate} />
+            </div>
+          ) : (
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
+              <div className="flex items-start gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg text-slate-500 dark:text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800">
+                <Paperclip className="w-4 h-4 mt-0.5" />
+                <span>Files and links can be added <strong>after</strong> you first save the RFI details.</span>
+              </div>
             </div>
           )}
 
@@ -451,6 +468,12 @@ export default function RFIsIndex() {
 
       <ConfirmDialog isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} isLoading={isDeleting}
         title="Delete RFI" message={`Delete RFI "${deleteTarget?.rfiNumber}"? Rev ${deleteTarget?.revisionNumber ?? 0}. This action cannot be undone.`} />
+      <ProfessionalExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        data={exportTarget?.data}
+        includeAttachments={exportTarget?.includeAttachments || false}
+      />
     </div>
   );
 }

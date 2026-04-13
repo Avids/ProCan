@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authenticate } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 import { uploadToS3, deleteFromS3, getPresignedUrl } from '../utils/s3';
+import { PDFDocument } from 'pdf-lib';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -154,6 +155,74 @@ router.delete('/:id', async (req: any, res: Response) => {
     res.status(204).send();
   } catch {
     res.status(500).json({ error: 'Failed to delete attachment' });
+  }
+});
+
+// ── GET proxy for a FILE (to avoid CORS) ───────────────────────────────────────
+router.get('/:id/proxy', async (req: Request, res: Response) => {
+  try {
+    const attachment = await prisma.attachment.findUnique({ where: { id: req.params.id } });
+    if (!attachment || attachment.kind !== 'FILE') return res.status(404).json({ error: 'FILE attachment not found' });
+
+    let finalUrl = attachment.url;
+    if (attachment.s3Key) {
+      finalUrl = await getPresignedUrl(attachment.s3Key);
+    }
+
+    const response = await fetch(finalUrl);
+    if (!response.ok) throw new Error(`Failed to fetch from S3: ${response.statusText}`);
+
+    const buffer = await response.arrayBuffer();
+    res.setHeader('Content-Type', attachment.mimeType || 'application/octet-stream');
+    res.send(Buffer.from(buffer));
+  } catch (err: any) {
+    console.error('Attachment proxy error:', err);
+    res.status(500).json({ error: 'Failed to proxy attachment content' });
+  }
+});
+
+// ── POST merge multiple PDFs ──────────────────────────────────────────────────
+router.post('/merge', upload.single('cover'), async (req: any, res: Response) => {
+  try {
+    const { attachmentIds } = req.body; // Array of IDs as JSON string or array
+    const ids = Array.isArray(attachmentIds) ? attachmentIds : JSON.parse(attachmentIds || '[]');
+    
+    const resultPdf = await PDFDocument.create();
+
+    // 1. Load and add Cover Page
+    if (req.file) {
+      const coverDoc = await PDFDocument.load(req.file.buffer);
+      const pages = await resultPdf.copyPages(coverDoc, coverDoc.getPageIndices());
+      pages.forEach(p => resultPdf.addPage(p));
+    }
+
+    // 2. Fetch and merge attachments
+    for (const id of ids) {
+      try {
+        const attach = await prisma.attachment.findUnique({ where: { id } });
+        if (!attach || attach.kind !== 'FILE' || !attach.url.toLowerCase().endsWith('.pdf')) continue;
+
+        let finalUrl = attach.url;
+        if (attach.s3Key) {
+          finalUrl = await getPresignedUrl(attach.s3Key);
+        }
+
+        const attachRes = await fetch(finalUrl);
+        const bytes = await attachRes.arrayBuffer();
+        const attachDoc = await PDFDocument.load(bytes);
+        const pages = await resultPdf.copyPages(attachDoc, attachDoc.getPageIndices());
+        pages.forEach(p => resultPdf.addPage(p));
+      } catch (e) {
+         console.error('Failed to merge attachment in backend:', id, e);
+      }
+    }
+
+    const mergedBytes = await resultPdf.save();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.send(Buffer.from(mergedBytes));
+  } catch (err: any) {
+    console.error('PDF Merging error:', err);
+    res.status(500).json({ error: 'Failed to merge PDFs' });
   }
 });
 
